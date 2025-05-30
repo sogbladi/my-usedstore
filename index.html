@@ -1590,15 +1590,16 @@
             productImageInput.addEventListener('change', handleImageUpload);
 
             // أحداث زر الإشعارات
-            notificationsBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                notificationsPanel.style.display = notificationsPanel.style.display === 'block' ? 'none' : 'block';
-                
-                // وضع الإشعارات كمقروءة عند فتح اللوحة
-                notifications.forEach(notif => notif.read = true);
-                updateNotificationBadge();
-                renderNotifications();
-            });
+           // أحداث زر الإشعارات
+notificationsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    notificationsPanel.style.display = notificationsPanel.style.display === 'block' ? 'none' : 'block';
+    
+    if (notificationsPanel.style.display === 'block') {
+        markNotificationsAsRead();
+        renderNotifications();
+    }
+});
 
             // إغلاق لوحة الإشعارات عند النقر خارجها
             document.addEventListener('click', (e) => {
@@ -1930,17 +1931,25 @@
         if (error) throw error;
         
         if (userData) {
-            // 2. تهيئة liked_products و notifications إذا كانت غير موجودة أو غير صالحة
+            // معالجة الإشعارات
+            let notifications = [];
+            try {
+                if (userData.notifications && Array.isArray(userData.notifications)) {
+                    notifications = userData.notifications;
+                }
+            } catch (e) {
+                console.error("Error parsing notifications:", e);
+            }
+            
             currentUser = {
                 ...userData,
                 liked_products: Array.isArray(userData.liked_products) ? 
                     userData.liked_products : [],
-                notifications: Array.isArray(userData.notifications) ? 
-                    userData.notifications : []
+                notifications: notifications
             };
             updateProfilePage();
         } else {
-            // 3. إنشاء ملف شخصي جديد إذا لم يكن موجوداً
+            // إنشاء ملف شخصي جديد إذا لم يكن موجوداً
             const { data: authData } = await supabase.auth.getUser();
             
             if (authData.user) {
@@ -1952,8 +1961,8 @@
                     wilaya: authData.user.user_metadata?.wilaya || 'الجزائر',
                     phone: authData.user.user_metadata?.phone || '+213000000000',
                     profile_pic: '',
-                    liked_products: [], // مصفوفة فارغة افتراضياً
-                    notifications: []    // مصفوفة فارغة افتراضياً للإشعارات
+                    liked_products: [],
+                    notifications: []
                 };
 
                 const { data: insertedProfile, error: insertError } = await supabase
@@ -1964,7 +1973,6 @@
                 
                 if (insertError) throw insertError;
                 
-                // 4. تعيين البيانات مع ضمان أن liked_products و notifications مصفوفات
                 currentUser = {
                     ...insertedProfile,
                     liked_products: [],
@@ -1975,9 +1983,9 @@
         }
     } catch (error) {
         console.error("خطأ في جلب بيانات المستخدم:", error);
-        showNotification("خطأ في جلب بيانات المستخدم: " + (error.message || "حدث خطأ غير متوقع"), "error");
+        showNotification("خطأ في جلب بيانات المستخدم", "error");
         
-        // 5. إنشاء مستخدم مؤقت لتجنب الأخطاء
+        // إنشاء مستخدم مؤقت لتجنب الأخطاء
         currentUser = {
             id: userId,
             liked_products: [],
@@ -2196,7 +2204,16 @@
 
         if (error) throw error;
 
-        const currentNotifications = userData.notifications || [];
+        // تهيئة الإشعارات إذا كانت غير موجودة أو غير صالحة
+        let currentNotifications = [];
+        try {
+            if (userData.notifications && Array.isArray(userData.notifications)) {
+                currentNotifications = userData.notifications;
+            }
+        } catch (e) {
+            console.error("Error parsing notifications:", e);
+        }
+
         const newNotification = {
             title,
             message,
@@ -2214,11 +2231,20 @@
 
         if (updateError) throw updateError;
 
+        // تحديث الإشعارات للمستخدم الحالي إذا كان هو المستهدف
+        if (currentUser && currentUser.id === userId) {
+            if (!currentUser.notifications || !Array.isArray(currentUser.notifications)) {
+                currentUser.notifications = [];
+            }
+            currentUser.notifications.unshift(newNotification);
+            renderNotifications();
+            updateNotificationBadge();
+        }
+
     } catch (error) {
         console.error("خطأ في إرسال الإشعار:", error);
     }
 }
-
 async function getUsernameById(userId) {
     try {
         const { data, error } = await supabase
@@ -2808,6 +2834,7 @@ if (!isLiked && product.user_id !== currentUser.id) {
         }
         
         // 6. دوال إدارة الإشعارات
+       
         function renderNotifications() {
     const panel = document.getElementById('notifications-panel');
     panel.innerHTML = '';
@@ -2817,7 +2844,12 @@ if (!isLiked && product.user_id !== currentUser.id) {
         return;
     }
 
-    currentUser.notifications.forEach(notif => {
+    // ترتيب الإشعارات من الأحدث إلى الأقدم
+    const sortedNotifications = [...currentUser.notifications].sort((a, b) => {
+        return new Date(b.date) - new Date(a.date);
+    });
+
+    sortedNotifications.forEach(notif => {
         const item = document.createElement('div');
         item.className = 'notification-item';
         if (!notif.read) {
@@ -2831,6 +2863,55 @@ if (!isLiked && product.user_id !== currentUser.id) {
         panel.appendChild(item);
     });
 }
+
+
+async function markNotificationsAsRead() {
+    if (!currentUser || !currentUser.notifications) return;
+
+    try {
+        const unreadNotifications = currentUser.notifications.filter(n => !n.read);
+        if (unreadNotifications.length === 0) return;
+
+        // تحديث جميع الإشعارات كمقروءة
+        const updatedNotifications = currentUser.notifications.map(n => ({
+            ...n,
+            read: true
+        }));
+
+        // تحديث في قاعدة البيانات
+        const { error } = await supabase
+            .from('profiles')
+            .update({ notifications: updatedNotifications })
+            .eq('id', currentUser.id);
+
+        if (error) throw error;
+
+        // تحديث محلياً
+        currentUser.notifications = updatedNotifications;
+        updateNotificationBadge();
+
+    } catch (error) {
+        console.error("خطأ في تحديث حالة الإشعارات:", error);
+    }
+} 
+
+
+function addClearNotificationsButton() {
+    const btn = document.createElement('button');
+    btn.textContent = 'مسح الإشعارات';
+    btn.addEventListener('click', async () => {
+        await supabase
+            .from('profiles')
+            .update({ notifications: [] })
+            .eq('id', currentUser.id);
+        currentUser.notifications = [];
+        renderNotifications();
+    });
+    document.body.appendChild(btn);
+}
+
+
+
         function updateNotificationBadge() {
             const unreadCount = notifications.filter(notif => !notif.read).length;
             if (unreadCount > 0) {
