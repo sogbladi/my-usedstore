@@ -1477,6 +1477,31 @@
 
         // استماع للأحداث
         document.addEventListener('DOMContentLoaded', initializeApp);
+
+
+        function subscribeToProfileNotifications() {
+    if (!currentUser) return;
+
+    supabase
+        .channel('user_notifications')
+        .on('postgres_changes', {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'profiles',
+            filter: `id=eq.${currentUser.id}`
+        }, (payload) => {
+            const updated = payload.new;
+
+            // إذا تم تحديث عمود notifications
+            if (Array.isArray(updated.notifications)) {
+                currentUser.notifications = updated.notifications;
+                renderNotifications();
+                updateNotificationBadge();
+            }
+        })
+        .subscribe();
+}
+
         
         // 1. دوال تهيئة التطبيق
         async function initializeApp() {
@@ -1721,6 +1746,8 @@ notificationsBtn.addEventListener('click', (e) => {
                     
                     // الاشتراك في تغيرات المنتجات للإشعارات
                     subscribeToProductsChanges();
+                    subscribeToProfileNotifications();
+
                 }
             } catch (error) {
                 console.error("خطأ في تسجيل الدخول:", error);
@@ -2154,65 +2181,51 @@ notificationsBtn.addEventListener('click', (e) => {
         }
         
         async function subscribeToProductsChanges() {
-            if (!currentUser) return;
-            
-            const subscription = supabase
-                .channel('products_changes')
-                .on(
-                    'postgres_changes',
-                    {
-                        event: '*',
-                        schema: 'public',
-                        table: 'products'
-                    },
-                    async (payload) => {
-                        console.log('تغير في المنتجات:', payload);
-                        
-                        // تحديث قائمة المنتجات
-                        await loadProducts();
-                        
-                        // إذا كان الحدث إدراج منتج جديد وليس من المستخدم الحالي
-                        if (payload.eventType === 'INSERT' && payload.new.user_id !== currentUser.id) {
-                            const product = payload.new;
-                            const productName = product.name;
-                            const sellerName = await getUsernameById(product.user_id);
+    if (!currentUser) return;
+    
+    const subscription = supabase
+        .channel('products_changes')
+        .on(
+            'postgres_changes',
+            {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'products'
+            },
+            async (payload) => {
+                const product = payload.new;
+                if (product.user_id === currentUser.id) return;
 
-                            
-                            // إضافة إشعار
-                            addNotification(
-                                "منتج جديد في المتجر",
-                                `تم إضافة منتج جديد ${sellerName}: ${productName}`
-                            );
-                            
-                            showNotification(`تم إضافة منتج جديد: ${productName}`, "success");
-                        }
-                    }
-                )
-                .subscribe();
-                
-            return subscription;
-        }
+                const productName = product.name;
+                const sellerName = await getUsernameById(product.user_id);
 
-        async function addNotificationForUser(userId, title, message) {
+                addNotification(
+                    "منتج جديد في المتجر",
+                    `قام ${sellerName} بنشر منتج جديد: ${productName}`
+                );
+                showNotification(`تمت إضافة منتج جديد: ${productName}`, "success");
+            }
+        )
+        .subscribe();
+
+    return subscription;
+}
+
+async function addNotificationForUser(userId, title, message) {
     try {
-        // جلب الإشعارات الحالية للمستخدم
-        const { data: userData, error } = await supabase
+        // جلب الإشعارات الحالية من جدول profiles
+        const { data: userData, error: fetchError } = await supabase
             .from('profiles')
             .select('notifications')
             .eq('id', userId)
             .single();
 
-        if (error) throw error;
+        if (fetchError) throw fetchError;
 
-        // تهيئة الإشعارات إذا كانت غير موجودة أو غير صالحة
-        let currentNotifications = [];
-        try {
-            if (userData.notifications && Array.isArray(userData.notifications)) {
-                currentNotifications = userData.notifications;
-            }
-        } catch (e) {
-            console.error("Error parsing notifications:", e);
-        }
+        // تأكد من أن notifications مصفوفة صالحة
+        const currentNotifications = Array.isArray(userData?.notifications)
+            ? userData.notifications
+            : [];
 
         const newNotification = {
             title,
@@ -2221,7 +2234,7 @@ notificationsBtn.addEventListener('click', (e) => {
             read: false
         };
 
-        // تحديث الإشعارات
+        // تحديث عمود notifications بإضافة الإشعار الجديد
         const { error: updateError } = await supabase
             .from('profiles')
             .update({
@@ -2231,20 +2244,19 @@ notificationsBtn.addEventListener('click', (e) => {
 
         if (updateError) throw updateError;
 
-        // تحديث الإشعارات للمستخدم الحالي إذا كان هو المستهدف
+        // إذا كان المستخدم الحالي هو نفسه المستهدف، حدّث الواجهة
         if (currentUser && currentUser.id === userId) {
-            if (!currentUser.notifications || !Array.isArray(currentUser.notifications)) {
-                currentUser.notifications = [];
-            }
-            currentUser.notifications.unshift(newNotification);
+            currentUser.notifications = [...currentNotifications, newNotification];
             renderNotifications();
             updateNotificationBadge();
         }
 
     } catch (error) {
-        console.error("خطأ في إرسال الإشعار:", error);
+        console.error("❌ خطأ في إرسال الإشعار:", error.message || error);
+        showNotification("حدث خطأ أثناء إرسال الإشعار", "error");
     }
 }
+
 async function getUsernameById(userId) {
     try {
         const { data, error } = await supabase
@@ -2352,7 +2364,7 @@ if (!isLiked && product.user_id !== currentUser.id) {
     const message = `${likerName} أعجب بمنتجك "${product.name}"`;
 
     // إضافة إشعار للمالك
-    addNotificationForUser(
+    await  addNotificationForUser(
         product.user_id,
         "إعجاب جديد",
         message
