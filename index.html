@@ -276,7 +276,8 @@
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
             gap: 20px;
-            margin-top: 20px;
+            margin-top: 30px;
+            padding: 20px 0;
         }
 
         .product-card {
@@ -286,6 +287,9 @@
             box-shadow: var(--shadow);
             transition: var(--transition);
             position: relative;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #eee;
         }
 
         .product-card:hover {
@@ -303,6 +307,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            border-bottom: 1px solid #eee;
         }
 
         .product-image {
@@ -318,15 +323,19 @@
 
         .product-info {
             padding: 15px;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
         }
 
         .product-title {
             font-weight: bold;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
             display: -webkit-box;
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
+            color: var(--text-color);
         }
 
         .product-price {
@@ -336,25 +345,24 @@
             font-size: 1.1rem;
         }
 
+        .product-condition {
+            color: var(--light-text);
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
         .product-phone {
             color: var(--secondary-color);
-            margin-bottom: 8px;
+            margin-bottom: 15px;
             font-size: 0.9rem;
             direction: ltr;
             text-align: left;
         }
 
-        .product-meta {
-            display: flex;
-            justify-content: space-between;
-            color: var(--light-text);
-            font-size: 0.8rem;
-        }
-
         .product-actions {
             display: flex;
             justify-content: space-between;
-            margin-top: 10px;
+            margin-top: auto;
             padding-top: 10px;
             border-top: 1px solid var(--border-color);
         }
@@ -804,6 +812,7 @@
             text-align: center;
             padding: 40px 20px;
             color: var(--light-text);
+            grid-column: 1/-1;
         }
 
         /* Loading Spinner */
@@ -826,11 +835,16 @@
             background-color: var(--danger-color);
             color: white;
             border: none;
-            padding: 5px 10px;
+            padding: 8px;
             border-radius: 4px;
-            font-size: 0.8rem;
+            font-size: 0.9rem;
             margin-top: 10px;
             width: 100%;
+            transition: var(--transition);
+        }
+
+        .delete-product-btn:hover {
+            background-color: #b71c1c;
         }
 
         /* Responsive Styles */
@@ -1251,7 +1265,7 @@
                     <option value="قالمة">قالمة</option>
                     <option value="قسنطينة">قسنطينة</option>
                     <option value="المدية">المدية</option>
-                    <option value="مستغانم">مستغانم</option>
+                    <option value="مستغانم">مستغانм</option>
                     <option value="المسيلة">المسيلة</option>
                     <option value="معسكر">معسكر</option>
                     <option value="ورقلة">ورقلة</option>
@@ -1482,6 +1496,9 @@
                 await loadUserData(session.user.id);
                 await loadProducts();
                 showStorePage();
+                
+                // الاشتراك في تغيرات المنتجات للإشعارات
+                subscribeToProductsChanges();
             } else {
                 showLoginPage();
             }
@@ -1567,10 +1584,9 @@
             publishProductBtn.addEventListener('click', handlePublishProduct);
 
             uploadImagesBtn.addEventListener('click', () => {
-            productImageInput.click();
+                productImageInput.click();
             });
 
-            const productImageInput = document.getElementById('product-image-input');
             productImageInput.addEventListener('change', handleImageUpload);
 
             // أحداث زر الإشعارات
@@ -1701,6 +1717,9 @@
                     await loadProducts();
                     showStorePage();
                     showNotification("تم تسجيل الدخول بنجاح", "success");
+                    
+                    // الاشتراك في تغيرات المنتجات للإشعارات
+                    subscribeToProductsChanges();
                 }
             } catch (error) {
                 console.error("خطأ في تسجيل الدخول:", error);
@@ -1814,7 +1833,10 @@
                 // 4. تحميل المنتجات
                 await loadProducts();
                 
-                // 5. الانتقال إلى المتجر
+                // 5. الاشتراك في تغيرات المنتجات للإشعارات
+                subscribeToProductsChanges();
+                
+                // 6. الانتقال إلى المتجر
                 showStorePage();
                 showNotification("تم التحقق بنجاح", "success");
                 
@@ -1908,11 +1930,13 @@
         if (error) throw error;
         
         if (userData) {
-            // 2. تهيئة liked_products إذا كانت غير موجودة أو غير صالحة
+            // 2. تهيئة liked_products و notifications إذا كانت غير موجودة أو غير صالحة
             currentUser = {
                 ...userData,
                 liked_products: Array.isArray(userData.liked_products) ? 
-                    userData.liked_products : []
+                    userData.liked_products : [],
+                notifications: Array.isArray(userData.notifications) ? 
+                    userData.notifications : []
             };
             updateProfilePage();
         } else {
@@ -1928,7 +1952,8 @@
                     wilaya: authData.user.user_metadata?.wilaya || 'الجزائر',
                     phone: authData.user.user_metadata?.phone || '+213000000000',
                     profile_pic: '',
-                    liked_products: [] // مصفوفة فارغة افتراضياً
+                    liked_products: [], // مصفوفة فارغة افتراضياً
+                    notifications: []    // مصفوفة فارغة افتراضياً للإشعارات
                 };
 
                 const { data: insertedProfile, error: insertError } = await supabase
@@ -1939,10 +1964,11 @@
                 
                 if (insertError) throw insertError;
                 
-                // 4. تعيين البيانات مع ضمان أن liked_products مصفوفة
+                // 4. تعيين البيانات مع ضمان أن liked_products و notifications مصفوفات
                 currentUser = {
                     ...insertedProfile,
-                    liked_products: []
+                    liked_products: [],
+                    notifications: []
                 };
                 updateProfilePage();
             }
@@ -1955,6 +1981,7 @@
         currentUser = {
             id: userId,
             liked_products: [],
+            notifications: [],
             full_name: 'مستخدم',
             email: '',
             age: 18,
@@ -1973,6 +2000,9 @@
                     await loadUserData(session.user.id);
                     await loadProducts();
                     showStorePage();
+                    
+                    // الاشتراك في تغيرات المنتجات للإشعارات
+                    subscribeToProductsChanges();
                 } catch (error) {
                     console.error("خطأ في تحميل البيانات:", error);
                     showNotification("حدث خطأ أثناء تحميل البيانات", "error");
@@ -1991,328 +2021,448 @@
         
         // 3. دوال إدارة المنتجات
         async function loadProducts() {
+            try {
+                const { data: productsData, error } = await supabase
+                    .from('products')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+
+                const productsWithImages = [];
+
+                for (const product of productsData) {
+                    const signedUrls = await getSignedProductImageUrls(product.image_paths || []);
+                    productsWithImages.push({
+                        ...product,
+                        signed_image_urls: signedUrls // نضيف الصور المؤقتة للعرض
+                    });
+                }
+
+                products = productsWithImages; // مصفوفة كاملة
+                renderProducts(); // قم بتحديث العرض
+
+            } catch (error) {
+                console.error("خطأ في جلب المنتجات:", error);
+                showNotification("خطأ في جلب المنتجات: " + error.message, "error");
+            }
+        }
+
+        function renderProducts() {
+            productsContainer.innerHTML = '';
+
+            if (products.length === 0) {
+                productsContainer.innerHTML = `
+                    <div class="empty-state">
+                        <div>📭</div>
+                        <h3>لا توجد منتجات متاحة حالياً</h3>
+                        <p>كن أول من ينشر منتج في المتجر</p>
+                    </div>
+                `;
+                return;
+            }
+
+            products.forEach(product => {
+                const productCard = document.createElement('div');
+                productCard.className = 'product-card';
+
+                const isLiked = currentUser && currentUser.liked_products && currentUser.liked_products.includes(product.id);
+
+                const imageUrl = (product.signed_image_urls && product.signed_image_urls.length > 0)
+                    ? product.signed_image_urls[0]
+                    : null;
+
+                productCard.innerHTML = `
+                    <div class="product-image-container">
+                        ${imageUrl ? 
+                            `<img src="${imageUrl}" alt="${product.name}" class="product-image">` :
+                            '<div style="font-size: 48px;">📷</div>'}
+                    </div>
+                    <div class="product-info">
+                        <div class="product-title">${product.name}</div>
+                        <div class="product-price">${product.price.toLocaleString()} دج</div>
+                        <div class="product-condition">حالة المنتج: ${product.condition}</div>
+                        <div class="product-phone">${product.phone}</div>
+                        <div class="product-actions">
+                            <button class="like-btn ${isLiked ? 'liked' : ''}" data-product-id="${product.id}">
+                                <span>${isLiked ? '❤️' : '🤍'}</span>
+                                <span>${product.likes || 0}</span>
+                            </button>
+                            <div class="views-count">
+                                <span>👁️</span>
+                                <span>${product.views || 0}</span>
+                            </div>
+                        </div>
+                        ${currentUser && product.user_id === currentUser.id ? 
+                            `<button class="delete-product-btn" data-product-id="${product.id}">حذف المنتج</button>` : ''}
+                    </div>
+                `;
+
+                // عرض الصور في عارض الصور عند النقر
+                const productImage = productCard.querySelector('.product-image-container');
+                productImage.addEventListener('click', async () => {
+                    if (product.signed_image_urls && product.signed_image_urls.length > 0) {
+                        // زيادة عدد المشاهدات
+                        try {
+                            const { error } = await supabase
+                                .from('products')
+                                .update({ views: (product.views || 0) + 1 })
+                                .eq('id', product.id);
+                            
+                            if (!error) {
+                                product.views = (product.views || 0) + 1;
+                                const viewsElement = productCard.querySelector('.views-count span:last-child');
+                                if (viewsElement) {
+                                    viewsElement.textContent = product.views;
+                                }
+                            }
+                        } catch (error) {
+                            console.error("خطأ في تحديث المشاهدات:", error);
+                        }
+                        
+                        openImageViewer(product.signed_image_urls);
+                    }
+                });
+
+                // إعجاب بالمنتج
+                const likeBtn = productCard.querySelector('.like-btn');
+                likeBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    await handleLikeProduct(e.target.closest('.like-btn'));
+                });
+
+                // حذف المنتج
+                if (currentUser && product.user_id === currentUser.id) {
+                    const deleteBtn = productCard.querySelector('.delete-product-btn');
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        productToDelete = product.id;
+                        deleteProductModal.style.display = 'flex';
+                    });
+                }
+
+                productsContainer.appendChild(productCard);
+            });
+        }
+        
+        async function subscribeToProductsChanges() {
+            if (!currentUser) return;
+            
+            const subscription = supabase
+                .channel('products_changes')
+                .on(
+                    'postgres_changes',
+                    {
+                        event: '*',
+                        schema: 'public',
+                        table: 'products'
+                    },
+                    async (payload) => {
+                        console.log('تغير في المنتجات:', payload);
+                        
+                        // تحديث قائمة المنتجات
+                        await loadProducts();
+                        
+                        // إذا كان الحدث إدراج منتج جديد وليس من المستخدم الحالي
+                        if (payload.eventType === 'INSERT' && payload.new.user_id !== currentUser.id) {
+                            const product = payload.new;
+                            const productName = product.name;
+                            const sellerName = await getUsernameById(product.user_id);
+
+                            
+                            // إضافة إشعار
+                            addNotification(
+                                "منتج جديد في المتجر",
+                                `تم إضافة منتج جديد ${sellerName}: ${productName}`
+                            );
+                            
+                            showNotification(`تم إضافة منتج جديد: ${productName}`, "success");
+                        }
+                    }
+                )
+                .subscribe();
+                
+            return subscription;
+        }
+
+        async function addNotificationForUser(userId, title, message) {
     try {
-        const { data: productsData, error } = await supabase
-            .from('products')
-            .select('*')
-            .order('created_at', { ascending: false });
+        // جلب الإشعارات الحالية للمستخدم
+        const { data: userData, error } = await supabase
+            .from('profiles')
+            .select('notifications')
+            .eq('id', userId)
+            .single();
 
         if (error) throw error;
 
-        const productsWithImages = [];
+        const currentNotifications = userData.notifications || [];
+        const newNotification = {
+            title,
+            message,
+            date: new Date().toISOString(),
+            read: false
+        };
 
-        for (const product of productsData) {
-            const signedUrls = await getSignedProductImageUrls(product.image_paths || []);
-            productsWithImages.push({
-                ...product,
-                signed_image_urls: signedUrls // نضيف الصور المؤقتة للعرض
-            });
-        }
+        // تحديث الإشعارات
+        const { error: updateError } = await supabase
+            .from('profiles')
+            .update({
+                notifications: [...currentNotifications, newNotification]
+            })
+            .eq('id', userId);
 
-        products = productsWithImages; // مصفوفة كاملة
-        renderProducts(); // قم بتحديث العرض
+        if (updateError) throw updateError;
 
     } catch (error) {
-        console.error("خطأ في جلب المنتجات:", error);
-        showNotification("خطأ في جلب المنتجات: " + error.message, "error");
+        console.error("خطأ في إرسال الإشعار:", error);
     }
 }
 
-function renderProducts() {
-    productsContainer.innerHTML = '';
-
-    if (products.length === 0) {
-        productsContainer.innerHTML = `
-            <div class="empty-state" style="grid-column: 1/-1;">
-                <div>📭</div>
-                <h3>لا توجد منتجات متاحة حالياً</h3>
-                <p>كن أول من ينشر منتج في المتجر</p>
-            </div>
-        `;
-        return;
-    }
-
-    products.forEach(product => {
-        const productCard = document.createElement('div');
-        productCard.className = 'product-card';
-
-        const isLiked = currentUser && currentUser.liked_products && currentUser.liked_products.includes(product.id);
-        const distance = Math.floor(Math.random() * 30) + 1;
-
-        const imageUrl = (product.signed_image_urls && product.signed_image_urls.length > 0)
-            ? product.signed_image_urls[0]
-            : null;
-
-        productCard.innerHTML = `
-            <div class="product-image-container">
-                ${imageUrl ? 
-                    `<img src="${imageUrl}" alt="${product.name}" class="product-image">` :
-                    '<div style="font-size: 48px;">📷</div>'}
-            </div>
-            <div class="product-info">
-                <div class="product-title">${product.name}</div>
-                <div class="product-price">${product.price.toLocaleString()} دج</div>
-                <div class="product-phone">${product.phone}</div>
-                <div class="product-meta">
-                    <span>${product.condition}</span>
-                    <span>${distance} كم</span>
-                </div>
-                <div class="product-actions">
-                    <button class="like-btn ${isLiked ? 'liked' : ''}" data-product-id="${product.id}">
-                        <span>${isLiked ? '❤️' : '🤍'}</span>
-                        <span>${product.likes || 0}</span>
-                    </button>
-                    <div class="views-count">
-                        <span>👁️</span>
-                        <span>${product.views || 0}</span>
-                    </div>
-                </div>
-                ${currentUser && product.user_id === currentUser.id ? 
-                    `<button class="delete-product-btn" data-product-id="${product.id}">حذف المنتج</button>` : ''}
-            </div>
-        `;
-
-        // عرض الصور في عارض الصور عند النقر
-        const productImage = productCard.querySelector('.product-image-container');
-        productImage.addEventListener('click', () => {
-            if (product.signed_image_urls && product.signed_image_urls.length > 0) {
-                openImageViewer(product.signed_image_urls);
-            }
-        });
-
-        // إعجاب بالمنتج
-        const likeBtn = productCard.querySelector('.like-btn');
-        likeBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            await handleLikeProduct(e.target.closest('.like-btn'));
-        });
-
-        // حذف المنتج
-        if (currentUser && product.user_id === currentUser.id) {
-            const deleteBtn = productCard.querySelector('.delete-product-btn');
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                productToDelete = product.id;
-                deleteProductModal.style.display = 'flex';
-            });
-        }
-
-        productsContainer.appendChild(productCard);
-    });
-}
-
-        
-async function handleLikeProduct(likeBtn) {
-    const productId = likeBtn.dataset.productId;
-    const product = products.find(p => p.id === productId);
-    
-    if (!currentUser) {
-        showNotification("يجب تسجيل الدخول للإعجاب بالمنتجات", "error");
-        return;
-    }
-    
+async function getUsernameById(userId) {
     try {
-        const isLiked = likeBtn.classList.contains('liked');
-        
-        // تهيئة liked_products إذا كانت غير موجودة
-        if (!currentUser.liked_products) {
-            currentUser.liked_products = [];
-        }
-        
-        if (isLiked) {
-            // إزالة الإعجاب
-            const { error: productError } = await supabase
-                .from('products')
-                .update({ 
-                    likes: Math.max((product.likes || 0) - 1, 0) // التأكد من عدم وجود قيم سالبة
-                })
-                .eq('id', productId);
-            
-            if (productError) throw productError;
-            
-            const updatedLikes = currentUser.liked_products.filter ? 
-                currentUser.liked_products.filter(id => id !== productId) : [];
-            
-            const { error: profileError } = await supabase
-                .from('profiles')
-                .update({
-                    liked_products: updatedLikes
-                })
-                .eq('id', currentUser.id);
-            
-            if (profileError) throw profileError;
-            
-            likeBtn.classList.remove('liked');
-            likeBtn.innerHTML = `<span>🤍</span><span>${Math.max((product.likes || 1) - 1, 0)}</span>`;
-            currentUser.liked_products = updatedLikes;
-            product.likes = Math.max((product.likes || 1) - 1, 0);
-            showNotification("تمت إزالة الإعجاب", "success");
-        } else {
-            // إضافة إعجاب
-            const { error: productError } = await supabase
-                .from('products')
-                .update({ 
-                    likes: (product.likes || 0) + 1 
-                })
-                .eq('id', productId);
-            
-            if (productError) throw productError;
-            
-            const newLikes = Array.isArray(currentUser.liked_products) ?
-                [...currentUser.liked_products, productId] : [productId];
-            
-            const { error: profileError } = await supabase
-                .from('profiles')
-                .update({
-                    liked_products: newLikes
-                })
-                .eq('id', currentUser.id);
-            
-            if (profileError) throw profileError;
-            
-            likeBtn.classList.add('liked');
-            likeBtn.innerHTML = `<span>❤️</span><span>${(product.likes || 0) + 1}</span>`;
-            currentUser.liked_products = newLikes;
-            product.likes = (product.likes || 0) + 1;
-            showNotification("تمت إضافة الإعجاب", "success");
-        }
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', userId)
+            .single();
+
+        if (error) throw error;
+        return data.full_name || "مستخدم";
+
     } catch (error) {
-        console.error("خطأ في تحديث الإعجاب:", error);
-        showNotification("خطأ في تحديث الإعجاب: " + (error.message || "حدث خطأ غير متوقع"), "error");
-        
-        // إعادة تحميل حالة الإعجاب الحقيقية من السيرفر
-        await loadUserData(currentUser.id);
-        await loadProducts();
+        console.error("خطأ في جلب اسم المستخدم:", error);
+        return "مستخدم";
     }
 }
+
+
+        async function handleLikeProduct(likeBtn) {
+            const productId = likeBtn.dataset.productId;
+            const product = products.find(p => p.id === productId);
+            
+            if (!currentUser) {
+                showNotification("يجب تسجيل الدخول للإعجاب بالمنتجات", "error");
+                return;
+            }
+            
+            try {
+                const isLiked = likeBtn.classList.contains('liked');
+                
+                // تهيئة liked_products إذا كانت غير موجودة
+                if (!currentUser.liked_products) {
+                    currentUser.liked_products = [];
+                }
+                
+                if (isLiked) {
+                    // إزالة الإعجاب
+                    const { error: productError } = await supabase
+                        .from('products')
+                        .update({ 
+                            likes: Math.max((product.likes || 0) - 1, 0) // التأكد من عدم وجود قيم سالبة
+                        })
+                        .eq('id', productId);
+                    
+                    if (productError) throw productError;
+                    
+                    const updatedLikes = currentUser.liked_products.filter ? 
+                        currentUser.liked_products.filter(id => id !== productId) : [];
+                    
+                    const { error: profileError } = await supabase
+                        .from('profiles')
+                        .update({
+                            liked_products: updatedLikes
+                        })
+                        .eq('id', currentUser.id);
+                    
+                    if (profileError) throw profileError;
+                    
+                    likeBtn.classList.remove('liked');
+                    likeBtn.innerHTML = `<span>🤍</span><span>${Math.max((product.likes || 1) - 1, 0)}</span>`;
+                    currentUser.liked_products = updatedLikes;
+                    product.likes = Math.max((product.likes || 1) - 1, 0);
+                    showNotification("تمت إزالة الإعجاب", "success");
+                } else {
+                    // إضافة إعجاب
+                    const { error: productError } = await supabase
+                        .from('products')
+                        .update({ 
+                            likes: (product.likes || 0) + 1 
+                        })
+                        .eq('id', productId);
+                    
+                    if (productError) throw productError;
+                    
+                    const newLikes = Array.isArray(currentUser.liked_products) ?
+                        [...currentUser.liked_products, productId] : [productId];
+                    
+                    const { error: profileError } = await supabase
+                        .from('profiles')
+                        .update({
+                            liked_products: newLikes
+                        })
+                        .eq('id', currentUser.id);
+                    
+                    if (profileError) throw profileError;
+                    
+                    likeBtn.classList.add('liked');
+                    likeBtn.innerHTML = `<span>❤️</span><span>${(product.likes || 0) + 1}</span>`;
+                    currentUser.liked_products = newLikes;
+                    product.likes = (product.likes || 0) + 1;
+                    showNotification("تمت إضافة الإعجاب", "success");
+                }
+            } catch (error) {
+                console.error("خطأ في تحديث الإعجاب:", error);
+                showNotification("خطأ في تحديث الإعجاب: " + (error.message || "حدث خطأ غير متوقع"), "error");
+                
+                // إعادة تحميل حالة الإعجاب الحقيقية من السيرفر
+                await loadUserData(currentUser.id);
+                await loadProducts();
+            }
+
+            // إرسال إشعار للمالك إذا كان الإعجاب من مستخدم آخر
+if (!isLiked && product.user_id !== currentUser.id) {
+    const likerName = currentUser.full_name || "مستخدم";
+    const message = `${likerName} أعجب بمنتجك "${product.name}"`;
+
+    // إضافة إشعار للمالك
+    addNotificationForUser(
+        product.user_id,
+        "إعجاب جديد",
+        message
+    );
+
+    showNotification("تم الإعجاب بالمنتج بنجاح", "success");
+}
+        }
        
         async function handlePublishProduct() {
-    let imagePaths = []; // تعريف المتغير في أعلى الدالة
-    
-    try {
-        // التحقق من وجود المستخدم
-        if (!currentUser) {
-            showNotification("يجب تسجيل الدخول أولاً", "error");
-            return;
+            let imagePaths = []; // تعريف المتغير في أعلى الدالة
+            
+            try {
+                // التحقق من وجود المستخدم
+                if (!currentUser) {
+                    showNotification("يجب تسجيل الدخول أولاً", "error");
+                    return;
+                }
+
+                // الحصول على بيانات النموذج
+                const productName = document.getElementById('product-name').value.trim();
+                const productPrice = document.getElementById('product-price').value.trim();
+                const productCategory = document.getElementById('product-category').value;
+                const productCondition = document.getElementById('product-condition').value;
+                const productDescription = document.getElementById('product-description').value.trim();
+                const productPhone = document.getElementById('product-phone').value.trim();
+                const productImageInput = document.getElementById('product-image-input');
+                const files = productImageInput.files;
+
+                // التحقق من البيانات
+                if (!files || files.length === 0 || files.length > 4) {
+                    showNotification("يجب اختيار من 1 إلى 4 صور للمنتج", "error");
+                    return;
+                }
+
+                if (!productName || !productPrice || !productCategory || !productCondition || !productPhone) {
+                    showNotification("الرجاء تعبئة جميع الحقول المطلوبة", "error");
+                    return;
+                }
+
+                // تعطيل الزر أثناء المعالجة
+                publishProductBtn.disabled = true;
+                publishProductBtn.innerHTML = '<span class="spinner"></span> جاري النشر...';
+
+                // رفع الصور إلى التخزين
+                for (let file of files) {
+                    const ext = file.name.split('.').pop();
+                    const fileName = `${currentUser.id}_${Date.now()}_${Math.floor(Math.random() * 10000)}.${ext}`;
+                    const filePath = `product-images/${fileName}`;
+
+                    const { error: uploadError } = await supabase.storage
+                        .from('product-images')
+                        .upload(filePath, file, {
+                            cacheControl: '3600',
+                            contentType: file.type,
+                            upsert: false
+                        });
+
+                    if (uploadError) throw uploadError;
+                    imagePaths.push(filePath);
+                }
+
+                // إدراج المنتج في قاعدة البيانات
+                const { data, error: insertError } = await supabase
+                    .from('products')
+                    .insert([{
+                        user_id: currentUser.id,
+                        name: productName,
+                        price: parseFloat(productPrice),
+                        category: productCategory,
+                        condition: productCondition,
+                        description: productDescription,
+                        phone: `+213${productPhone}`,
+                        image_paths: imagePaths,
+                        views: 0,
+                        likes: 0,
+                        created_at: new Date().toISOString()
+                    }])
+                    .select();
+
+                if (insertError) throw insertError;
+
+                // إظهار رسالة نجاح
+                showNotification("تم نشر المنتج بنجاح", "success");
+
+                // مسح النموذج وإعادة التحميل
+                resetProductForm();
+                await loadProducts();
+                showStorePage();
+
+            } catch (error) {
+                console.error("خطأ في نشر المنتج:", error);
+                
+                // حذف الصور المرفوعة في حالة الخطأ
+                if (imagePaths.length > 0) {
+                    await supabase.storage
+                        .from('product-images')
+                        .remove(imagePaths)
+                        .catch(console.error);
+                }
+
+                showNotification("خطأ في نشر المنتج: " + (error.message || "تأكد من صحة البيانات"), "error");
+            } finally {
+                publishProductBtn.disabled = false;
+                publishProductBtn.innerHTML = 'نشر المنتج';
+            }
         }
 
-        // الحصول على بيانات النموذج
-        const productName = document.getElementById('product-name').value.trim();
-        const productPrice = document.getElementById('product-price').value.trim();
-        const productCategory = document.getElementById('product-category').value;
-        const productCondition = document.getElementById('product-condition').value;
-        const productDescription = document.getElementById('product-description').value.trim();
-        const productPhone = document.getElementById('product-phone').value.trim();
-        const productImageInput = document.getElementById('product-image-input');
-        const files = productImageInput.files;
-
-        // التحقق من البيانات
-        if (!files || files.length === 0 || files.length > 4) {
-            showNotification("يجب اختيار من 1 إلى 4 صور للمنتج", "error");
-            return;
+        function resetProductForm() {
+            document.getElementById('product-name').value = '';
+            document.getElementById('product-price').value = '';
+            document.getElementById('product-category').value = '';
+            document.getElementById('product-condition').value = '';
+            document.getElementById('product-description').value = '';
+            document.getElementById('product-phone').value = '';
+            document.getElementById('product-image-input').value = '';
+            document.getElementById('image-preview').innerHTML = '';
         }
 
-        if (!productName || !productPrice || !productCategory || !productCondition || !productPhone) {
-            showNotification("الرجاء تعبئة جميع الحقول المطلوبة", "error");
-            return;
-        }
-
-        // تعطيل الزر أثناء المعالجة
-        publishProductBtn.disabled = true;
-        publishProductBtn.innerHTML = '<span class="spinner"></span> جاري النشر...';
-
-        // رفع الصور إلى التخزين
-        for (let file of files) {
-            const ext = file.name.split('.').pop();
-            const fileName = `${currentUser.id}_${Date.now()}_${Math.floor(Math.random() * 10000)}.${ext}`;
-            const filePath = `product-images/${fileName}`;
-
-            const { error: uploadError } = await supabase.storage
-                .from('product-images')
-                .upload(filePath, file, {
-                    cacheControl: '3600',
-                    contentType: file.type,
-                    upsert: false
-                });
-
-            if (uploadError) throw uploadError;
-            imagePaths.push(filePath);
-        }
-
-        // إدراج المنتج في قاعدة البيانات
-        const { data, error: insertError } = await supabase
-            .from('products')
-            .insert([{
-                user_id: currentUser.id,
-                name: productName,
-                price: parseFloat(productPrice),
-                category: productCategory,
-                condition: productCondition,
-                description: productDescription,
-                phone: `+213${productPhone}`,
-                image_paths: imagePaths,
-                created_at: new Date().toISOString()
-            }])
-            .select();
-
-        if (insertError) throw insertError;
-
-        // إظهار رسالة نجاح
-        showNotification("تم نشر المنتج بنجاح", "success");
-
-        // مسح النموذج وإعادة التحميل
-        resetProductForm();
-        await loadProducts();
-        showStorePage();
-
-    } catch (error) {
-        console.error("خطأ في نشر المنتج:", error);
-        
-        // حذف الصور المرفوعة في حالة الخطأ
-        if (imagePaths.length > 0) {
-            await supabase.storage
-                .from('product-images')
-                .remove(imagePaths)
-                .catch(console.error);
-        }
-
-        showNotification("خطأ في نشر المنتج: " + (error.message || "تأكد من صحة البيانات"), "error");
-    } finally {
-        publishProductBtn.disabled = false;
-        publishProductBtn.innerHTML = 'نشر المنتج';
-    }
-}
-
-function resetProductForm() {
-    document.getElementById('product-name').value = '';
-    document.getElementById('product-price').value = '';
-    document.getElementById('product-category').value = '';
-    document.getElementById('product-condition').value = '';
-    document.getElementById('product-description').value = '';
-    document.getElementById('product-phone').value = '';
-    document.getElementById('product-image-input').value = '';
-    document.getElementById('image-preview').innerHTML = '';
-}
-
-           async function getSignedProductImageUrls(imagePaths) {
+        async function getSignedProductImageUrls(imagePaths) {
             const urls = [];
 
             for (const path of imagePaths) {
-             const { data, error } = await supabase.storage
-            .from('product-images')
-            .createSignedUrl(path, 60 * 60); // صالح لمدة ساعة
+                const { data, error } = await supabase.storage
+                    .from('product-images')
+                    .createSignedUrl(path, 60 * 60); // صالح لمدة ساعة
 
-            if (!error && data) {
-            urls.push(data.signedUrl);
-        } else {
-            console.error('فشل في توليد رابط الصورة:', path, error);
+                if (!error && data) {
+                    urls.push(data.signedUrl);
+                } else {
+                    console.error('فشل في توليد رابط الصورة:', path, error);
+                }
+            }
+
+            return urls;
         }
-    }
-
-    return urls;
-}
-
-       
 
         async function handleDeleteProduct() {
             if (!productToDelete || !currentUser) {
@@ -2325,15 +2475,10 @@ function resetProductForm() {
 
                 // 1. حذف الصور من التخزين
                 const product = products.find(p => p.id === productToDelete);
-                if (product && product.images && product.images.length > 0) {
-                    const filePaths = product.images.map(img => {
-                        const url = new URL(img);
-                        return url.pathname.split('/storage/v1/object/public/product-images/')[1];
-                    });
-
+                if (product && product.image_paths && product.image_paths.length > 0) {
                     const { error: deleteImagesError } = await supabase.storage
                         .from('product-images')
-                        .remove(filePaths);
+                        .remove(product.image_paths);
 
                     if (deleteImagesError) throw deleteImagesError;
                 }
@@ -2393,14 +2538,14 @@ function resetProductForm() {
                         imgContainer.remove();
                         
                         // إنشاء قائمة جديدة من الملفات بدون الملف المحذوف
-                        const newFiles = Array.from(productImagesInput.files).filter((_, idx) => idx !== i);
+                        const newFiles = Array.from(productImageInput.files).filter((_, idx) => idx !== i);
                         
                         // إنشاء DataTransfer جديد وإضافة الملفات المتبقية
                         const dataTransfer = new DataTransfer();
                         newFiles.forEach(file => dataTransfer.items.add(file));
                         
                         // تعيين الملفات الجديدة لعنصر الإدخال
-                        productImagesInput.files = dataTransfer.files;
+                        productImageInput.files = dataTransfer.files;
                     });
                     
                     imgContainer.appendChild(img);
@@ -2431,61 +2576,60 @@ function resetProductForm() {
         }
         
         async function handleConfirmChangePic() {
-    const file = newProfilePicInput.files[0];
-    if (!file || !currentUser) return;
+            const file = newProfilePicInput.files[0];
+            if (!file || !currentUser) return;
 
-    try {
-        confirmChangePicBtn.disabled = true;
-        confirmChangePicBtn.innerHTML = '<span class="spinner"></span> جاري الحفظ...';
+            try {
+                confirmChangePicBtn.disabled = true;
+                confirmChangePicBtn.innerHTML = '<span class="spinner"></span> جاري الحفظ...';
 
-        // 1. إعداد اسم فريد للملف
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${currentUser.id}_${Date.now()}.${fileExt}`;
-        const filePath = fileName; // داخل مجلد root للباكت
+                // 1. إعداد اسم فريد للملف
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${currentUser.id}_${Date.now()}.${fileExt}`;
+                const filePath = fileName; // داخل مجلد root للباكت
 
-        // 2. رفع الصورة إلى bucket
-        const { error: uploadError } = await supabase.storage
-            .from('profile-pictures')
-            .upload(filePath, file, {
-                cacheControl: '3600',
-                contentType: file.type,
-                upsert: true
-            });
+                // 2. رفع الصورة إلى bucket
+                const { error: uploadError } = await supabase.storage
+                    .from('profile-pictures')
+                    .upload(filePath, file, {
+                        cacheControl: '3600',
+                        contentType: file.type,
+                        upsert: true
+                    });
 
-        if (uploadError) throw uploadError;
+                if (uploadError) throw uploadError;
 
-        // 3. توليد رابط مؤقت للعرض (Signed URL)
-        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-            .from('profile-pictures')
-            .createSignedUrl(filePath, 60 * 60); // صالح لمدة 60 دقيقة
+                // 3. توليد رابط مؤقت للعرض (Signed URL)
+                const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                    .from('profile-pictures')
+                    .createSignedUrl(filePath, 60 * 60); // صالح لمدة 60 دقيقة
 
-        if (signedUrlError) throw signedUrlError;
+                if (signedUrlError) throw signedUrlError;
 
-        const signedUrl = signedUrlData.signedUrl;
+                const signedUrl = signedUrlData.signedUrl;
 
-        // 4. حفظ اسم الملف فقط في قاعدة البيانات (وليس الرابط المؤقت)
-        const { error: updateError } = await supabase
-            .from('profiles')
-            .update({ profile_pic: filePath })
-            .eq('id', currentUser.id);
+                // 4. حفظ اسم الملف فقط في قاعدة البيانات (وليس الرابط المؤقت)
+                const { error: updateError } = await supabase
+                    .from('profiles')
+                    .update({ profile_pic: filePath })
+                    .eq('id', currentUser.id);
 
-        if (updateError) throw updateError;
+                if (updateError) throw updateError;
 
-        // 5. تحديث البيانات في الواجهة مع الرابط المؤقت
-        currentUser.profile_pic = filePath;
-        updateProfilePicElements(signedUrl);
-        changePicModal.style.display = 'none';
-        showNotification("تم تحديث صورة الملف الشخصي بنجاح", "success");
+                // 5. تحديث البيانات في الواجهة مع الرابط المؤقت
+                currentUser.profile_pic = filePath;
+                updateProfilePicElements(signedUrl);
+                changePicModal.style.display = 'none';
+                showNotification("تم تحديث صورة الملف الشخصي بنجاح", "success");
 
-    } catch (error) {
-        console.error("خطأ في تغيير صورة الملف الشخصي:", error);
-        showNotification("خطأ في تغيير صورة الملف الشخصي: " + error.message, "error");
-    } finally {
-        confirmChangePicBtn.disabled = false;
-        confirmChangePicBtn.innerHTML = 'حفظ الصورة';
-    }
-}
-
+            } catch (error) {
+                console.error("خطأ في تغيير صورة الملف الشخصي:", error);
+                showNotification("خطأ في تغيير صورة الملف الشخصي: " + error.message, "error");
+            } finally {
+                confirmChangePicBtn.disabled = false;
+                confirmChangePicBtn.innerHTML = 'حفظ الصورة';
+            }
+        }
 
         
         function openImageViewer(images) {
@@ -2529,88 +2673,86 @@ function resetProductForm() {
         
         // 5. دوال إدارة الملف الشخصي
         async function updateProfilePage() {
-    if (!currentUser) return;
+            if (!currentUser) return;
 
-    profileFullName.textContent = currentUser.full_name;
-    profileEmail.textContent = currentUser.email;
-    profileAge.textContent = currentUser.age;
-    profileWilaya.textContent = currentUser.wilaya;
-    profilePhone.textContent = currentUser.phone;
+            profileFullName.textContent = currentUser.full_name;
+            profileEmail.textContent = currentUser.email;
+            profileAge.textContent = currentUser.age;
+            profileWilaya.textContent = currentUser.wilaya;
+            profilePhone.textContent = currentUser.phone;
 
-    // جلب Signed URL لصورة الملف الشخصي إن وجدت
-    if (currentUser.profile_pic && currentUser.profile_pic.trim() !== '') {
-        try {
-            const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-                .from('profile-pictures')
-                .createSignedUrl(currentUser.profile_pic, 60 * 60); // صالح لـ 60 دقيقة
+            // جلب Signed URL لصورة الملف الشخصي إن وجدت
+            if (currentUser.profile_pic && currentUser.profile_pic.trim() !== '') {
+                try {
+                    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                        .from('profile-pictures')
+                        .createSignedUrl(currentUser.profile_pic, 60 * 60); // صالح لـ 60 دقيقة
 
-            if (signedUrlError) throw signedUrlError;
+                    if (signedUrlError) throw signedUrlError;
 
-            updateProfilePicElements(signedUrlData.signedUrl);
-        } catch (err) {
-            console.error('فشل في تحميل صورة الملف الشخصي:', err);
-            updateProfilePicElements(null); // fallback إلى أول حرف
+                    updateProfilePicElements(signedUrlData.signedUrl);
+                } catch (err) {
+                    console.error('فشل في تحميل صورة الملف الشخصي:', err);
+                    updateProfilePicElements(null); // fallback إلى أول حرف
+                }
+            } else {
+                updateProfilePicElements(null);
+            }
         }
-    } else {
-        updateProfilePicElements(null);
-    }
-}
 
+        function updateProfilePicElements(url) {
+            const profilePic = document.getElementById('profile-picture');
+            const headerPic = document.getElementById('header-profile-pic');
 
-function updateProfilePicElements(url) {
-    const profilePic = document.getElementById('profile-picture');
-    const headerPic = document.getElementById('header-profile-pic');
+            // مسح المحتوى الحالي
+            profilePic.innerHTML = '';
+            headerPic.innerHTML = '';
 
-    // مسح المحتوى الحالي
-    profilePic.innerHTML = '';
-    headerPic.innerHTML = '';
+            if (url && url.trim() !== '') {
+                // إنشاء عنصر صورة لعرضها
+                const largeImg = document.createElement('img');
+                largeImg.src = url;
+                largeImg.alt = 'صورة الملف الشخصي';
+                largeImg.onerror = () => {
+                    profilePic.textContent = currentUser?.full_name?.charAt(0) || 'U';
+                };
 
-    if (url && url.trim() !== '') {
-        // إنشاء عنصر صورة لعرضها
-        const largeImg = document.createElement('img');
-        largeImg.src = url;
-        largeImg.alt = 'صورة الملف الشخصي';
-        largeImg.onerror = () => {
-            profilePic.textContent = currentUser?.full_name?.charAt(0) || 'U';
-        };
+                const smallImg = document.createElement('img');
+                smallImg.src = url;
+                smallImg.alt = 'صورة الملف الشخصي المصغرة';
+                smallImg.onerror = () => {
+                    headerPic.textContent = currentUser?.full_name?.charAt(0) || 'U';
+                };
 
-        const smallImg = document.createElement('img');
-        smallImg.src = url;
-        smallImg.alt = 'صورة الملف الشخصي المصغرة';
-        smallImg.onerror = () => {
-            headerPic.textContent = currentUser?.full_name?.charAt(0) || 'U';
-        };
+                // تطبيق الأنماط
+                const imgStyle = {
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: '50%',
+                    objectFit: 'cover',
+                    display: 'block'
+                };
 
-        // تطبيق الأنماط
-        const imgStyle = {
-            width: '100%',
-            height: '100%',
-            borderRadius: '50%',
-            objectFit: 'cover',
-            display: 'block'
-        };
+                Object.assign(largeImg.style, imgStyle);
+                Object.assign(smallImg.style, imgStyle);
 
-        Object.assign(largeImg.style, imgStyle);
-        Object.assign(smallImg.style, imgStyle);
+                profilePic.appendChild(largeImg);
+                headerPic.appendChild(smallImg);
+            } else {
+                // fallback إلى أول حرف من الاسم
+                const initial = currentUser?.full_name?.charAt(0) || 'U';
+                profilePic.textContent = initial;
+                headerPic.textContent = initial;
 
-        profilePic.appendChild(largeImg);
-        headerPic.appendChild(smallImg);
-    } else {
-        // fallback إلى أول حرف من الاسم
-        const initial = currentUser?.full_name?.charAt(0) || 'U';
-        profilePic.textContent = initial;
-        headerPic.textContent = initial;
-
-        // تنسيق
-        profilePic.style.display = 'flex';
-        profilePic.style.alignItems = 'center';
-        profilePic.style.justifyContent = 'center';
-        profilePic.style.fontWeight = 'bold';
-        profilePic.style.fontSize = profilePic.offsetWidth / 2 + 'px';
-        profilePic.style.color = '#666';
-    }
-}
-
+                // تنسيق
+                profilePic.style.display = 'flex';
+                profilePic.style.alignItems = 'center';
+                profilePic.style.justifyContent = 'center';
+                profilePic.style.fontWeight = 'bold';
+                profilePic.style.fontSize = profilePic.offsetWidth / 2 + 'px';
+                profilePic.style.color = '#666';
+            }
+        }
 
         
         async function handleSaveProfile() {
@@ -2667,29 +2809,28 @@ function updateProfilePicElements(url) {
         
         // 6. دوال إدارة الإشعارات
         function renderNotifications() {
-            const panel = document.getElementById('notifications-panel');
-            panel.innerHTML = '';
-            
-            if (notifications.length === 0) {
-                panel.innerHTML = '<div class="notification-item"><p>لا توجد إشعارات جديدة</p></div>';
-                return;
-            }
-            
-            notifications.forEach(notif => {
-                const item = document.createElement('div');
-                item.className = 'notification-item';
-                if (!notif.read) {
-                    item.style.backgroundColor = 'rgba(26, 115, 232, 0.1)';
-                }
-                item.innerHTML = `
-                    <strong>${notif.title}</strong>
-                    <p>${notif.message}</p>
-                    <small>${formatTimeAgo(notif.date)}</small>
-                `;
-                panel.appendChild(item);
-            });
+    const panel = document.getElementById('notifications-panel');
+    panel.innerHTML = '';
+
+    if (!currentUser?.notifications || currentUser.notifications.length === 0) {
+        panel.innerHTML = '<div class="notification-item"><p>لا توجد إشعارات جديدة</p></div>';
+        return;
+    }
+
+    currentUser.notifications.forEach(notif => {
+        const item = document.createElement('div');
+        item.className = 'notification-item';
+        if (!notif.read) {
+            item.style.backgroundColor = 'rgba(26, 115, 232, 0.1)';
         }
-        
+        item.innerHTML = `
+            <strong>${notif.title}</strong>
+            <p>${notif.message}</p>
+            <small>${formatTimeAgo(notif.date)}</small>
+        `;
+        panel.appendChild(item);
+    });
+}
         function updateNotificationBadge() {
             const unreadCount = notifications.filter(notif => !notif.read).length;
             if (unreadCount > 0) {
