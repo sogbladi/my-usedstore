@@ -2236,16 +2236,16 @@
         // دالة إضافة إشعار للمستخدم
         async function addNotificationForUser(userId, title, message) {
     try {
-        // جلب الإشعارات الحالية
+        // 1. جلب الإشعارات الحالية باستخدام maybeSingle() بدلاً من single()
         const { data: profile, error: fetchError } = await supabase
             .from('profiles')
             .select('notifications')
             .eq('id', userId)
-            .single();
+            .maybeSingle();
 
         if (fetchError) throw fetchError;
 
-        // إنشاء الإشعار الجديد
+        // 2. إنشاء الإشعار الجديد
         const newNotification = {
             title,
             message,
@@ -2253,22 +2253,20 @@
             read: false
         };
 
-        // تحديد الإشعارات الحالية أو إنشاء مصفوفة جديدة
-        const currentNotifications = Array.isArray(profile?.notifications) ? 
-            profile.notifications : [];
+        // 3. تحديد الإشعارات الحالية (إذا كانت موجودة) أو إنشاء مصفوفة جديدة
+        const currentNotifications = profile?.notifications || [];
 
-        // استخدام upsert بدلاً من update لتجنب مشاكل السجلات غير الموجودة
-        const { error: upsertError } = await supabase
+        // 4. تحديث الإشعارات في قاعدة البيانات
+        const { error: updateError } = await supabase
             .from('profiles')
-            .upsert({
-                id: userId,
+            .update({
                 notifications: [...currentNotifications, newNotification]
             })
             .eq('id', userId);
 
-        if (upsertError) throw upsertError;
+        if (updateError) throw updateError;
 
-        // تحديث الواجهة إذا كان المستخدم الحالي هو المستهدف
+        // 5. تحديث الواجهة إذا كان المستخدم الحالي هو المستهدف
         if (currentUser && currentUser.id === userId) {
             currentUser.notifications = [...currentNotifications, newNotification];
             renderNotifications();
