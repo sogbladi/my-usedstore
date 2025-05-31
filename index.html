@@ -2234,7 +2234,7 @@
         }
 
         // دالة إضافة إشعار للمستخدم
-async function addNotificationForUser(userId, title, message) {
+        async function addNotificationForUser(userId, title, message) {
     try {
         // جلب الإشعارات الحالية
         const { data: profile, error: fetchError } = await supabase
@@ -2253,25 +2253,31 @@ async function addNotificationForUser(userId, title, message) {
             read: false
         };
 
+        // تحديد الإشعارات الحالية (إذا كانت موجودة) أو إنشاء مصفوفة جديدة
+        const currentNotifications = profile.notifications || [];
+
         // تحديث الإشعارات في قاعدة البيانات
         const { error: updateError } = await supabase
             .from('profiles')
             .update({
-                notifications: [...(profile.notifications || []), newNotification]
+                notifications: [...currentNotifications, newNotification]
             })
-            .eq('id', userId);
+            .eq('id', userId)
+            .select()
+            .single();
 
         if (updateError) throw updateError;
 
         // إذا كان المستخدم الحالي هو المستهدف، تحديث الواجهة
         if (currentUser && currentUser.id === userId) {
-            currentUser.notifications = [...(currentUser.notifications || []), newNotification];
+            currentUser.notifications = [...currentNotifications, newNotification];
             renderNotifications();
             updateNotificationBadge();
         }
 
     } catch (error) {
         console.error("خطأ في إضافة الإشعار:", error);
+        showNotification("خطأ في إرسال الإشعار: " + error.message, "error");
     }
 }
 
