@@ -2180,23 +2180,18 @@
                     {
                         event: 'INSERT',
                         schema: 'public',
-                        table: 'products'
+                        table: 'products',
+                        filter: `user_id=neq.${currentUser.id}`
                     },
                     async (payload) => {
-                        const product = payload.new;
-                        
-                        // تجاهل المنتجات التي ينشرها المستخدم الحالي
-                        if (product.user_id === currentUser.id) return;
-
-                        // جلب بيانات البائع
-                        const sellerName = await getUsernameById(product.user_id);
-                        const productName = product.name;
+                        const newProduct = payload.new;
+                        const sellerName = await getUsernameById(newProduct.user_id);
 
                         // إضافة إشعار للمستخدم الحالي
                         await addNotificationForUser(
                             currentUser.id,
                             "منتج جديد في المتجر",
-                            `قام ${sellerName} بنشر منتج جديد: ${productName}`
+                            `قام ${sellerName} بنشر منتج جديد: ${newProduct.name}`
                         );
 
                         // تحميل المنتجات مرة أخرى لتحديث القائمة
@@ -2238,51 +2233,47 @@
                 .subscribe();
         }
 
-        async function addNotificationForUser(userId, title, message) {
-            try {
-                // جلب الإشعارات الحالية من جدول profiles
-                const { data: userData, error: fetchError } = await supabase
-                    .from('profiles')
-                    .select('notifications')
-                    .eq('id', userId)
-                    .single();
+        // دالة إضافة إشعار للمستخدم
+async function addNotificationForUser(userId, title, message) {
+    try {
+        // جلب الإشعارات الحالية
+        const { data: profile, error: fetchError } = await supabase
+            .from('profiles')
+            .select('notifications')
+            .eq('id', userId)
+            .single();
 
-                if (fetchError) throw fetchError;
+        if (fetchError) throw fetchError;
 
-                // تأكد من أن notifications مصفوفة صالحة
-                const currentNotifications = Array.isArray(userData?.notifications)
-                    ? userData.notifications
-                    : [];
+        // إنشاء الإشعار الجديد
+        const newNotification = {
+            title,
+            message,
+            date: new Date().toISOString(),
+            read: false
+        };
 
-                const newNotification = {
-                    title,
-                    message,
-                    date: new Date().toISOString(),
-                    read: false
-                };
+        // تحديث الإشعارات في قاعدة البيانات
+        const { error: updateError } = await supabase
+            .from('profiles')
+            .update({
+                notifications: [...(profile.notifications || []), newNotification]
+            })
+            .eq('id', userId);
 
-                // تحديث عمود notifications بإضافة الإشعار الجديد
-                const { error: updateError } = await supabase
-                    .from('profiles')
-                    .update({
-                        notifications: [...currentNotifications, newNotification]
-                    })
-                    .eq('id', userId);
+        if (updateError) throw updateError;
 
-                if (updateError) throw updateError;
-
-                // إذا كان المستخدم الحالي هو نفسه المستهدف، حدّث الواجهة
-                if (currentUser && currentUser.id === userId) {
-                    currentUser.notifications = [...currentNotifications, newNotification];
-                    renderNotifications();
-                    updateNotificationBadge();
-                }
-
-            } catch (error) {
-                console.error("❌ خطأ في إرسال الإشعار:", error.message || error);
-                showNotification("حدث خطأ أثناء إرسال الإشعار", "error");
-            }
+        // إذا كان المستخدم الحالي هو المستهدف، تحديث الواجهة
+        if (currentUser && currentUser.id === userId) {
+            currentUser.notifications = [...(currentUser.notifications || []), newNotification];
+            renderNotifications();
+            updateNotificationBadge();
         }
+
+    } catch (error) {
+        console.error("خطأ في إضافة الإشعار:", error);
+    }
+}
 
         async function getUsernameById(userId) {
             try {
@@ -2302,101 +2293,85 @@
         }
 
         async function handleLikeProduct(likeBtn) {
-            const productId = likeBtn.dataset.productId;
-            const product = products.find(p => p.id === productId);
+    const productId = likeBtn.dataset.productId;
+    const product = products.find(p => p.id === productId);
+    
+    if (!currentUser) {
+        showNotification("يجب تسجيل الدخول للإعجاب بالمنتجات", "error");
+        return;
+    }
+    
+    try {
+        const isLiked = likeBtn.classList.contains('liked');
+        
+        if (isLiked) {
+            // إزالة الإعجاب
+            const { error: productError } = await supabase
+                .from('products')
+                .update({ 
+                    likes: Math.max((product.likes || 0) - 1, 0)
+                })
+                .eq('id', productId);
             
-            if (!currentUser) {
-                showNotification("يجب تسجيل الدخول للإعجاب بالمنتجات", "error");
-                return;
-            }
+            if (productError) throw productError;
             
-            try {
-                const isLiked = likeBtn.classList.contains('liked');
-                
-                // تهيئة liked_products إذا كانت غير موجودة
-                if (!currentUser.liked_products) {
-                    currentUser.liked_products = [];
-                }
-                
-                if (isLiked) {
-                    // إزالة الإعجاب
-                    const { error: productError } = await supabase
-                        .from('products')
-                        .update({ 
-                            likes: Math.max((product.likes || 0) - 1, 0) // التأكد من عدم وجود قيم سالبة
-                        })
-                        .eq('id', productId);
-                    
-                    if (productError) throw productError;
-                    
-                    const updatedLikes = currentUser.liked_products.filter ? 
-                        currentUser.liked_products.filter(id => id !== productId) : [];
-                    
-                    const { error: profileError } = await supabase
-                        .from('profiles')
-                        .update({
-                            liked_products: updatedLikes
-                        })
-                        .eq('id', currentUser.id);
-                    
-                    if (profileError) throw profileError;
-                    
-                    likeBtn.classList.remove('liked');
-                    likeBtn.innerHTML = `<span>🤍</span><span>${Math.max((product.likes || 1) - 1, 0)}</span>`;
-                    currentUser.liked_products = updatedLikes;
-                    product.likes = Math.max((product.likes || 1) - 1, 0);
-                    showNotification("تمت إزالة الإعجاب", "success");
-                } else {
-                    // إضافة إعجاب
-                    const { error: productError } = await supabase
-                        .from('products')
-                        .update({ 
-                            likes: (product.likes || 0) + 1 
-                        })
-                        .eq('id', productId);
-                    
-                    if (productError) throw productError;
-                    
-                    const newLikes = Array.isArray(currentUser.liked_products) ?
-                        [...currentUser.liked_products, productId] : [productId];
-                    
-                    const { error: profileError } = await supabase
-                        .from('profiles')
-                        .update({
-                            liked_products: newLikes
-                        })
-                        .eq('id', currentUser.id);
-                    
-                    if (profileError) throw profileError;
-                    
-                    likeBtn.classList.add('liked');
-                    likeBtn.innerHTML = `<span>❤️</span><span>${(product.likes || 0) + 1}</span>`;
-                    currentUser.liked_products = newLikes;
-                    product.likes = (product.likes || 0) + 1;
-                    showNotification("تمت إضافة الإعجاب", "success");
+            const updatedLikes = (currentUser.liked_products || []).filter(id => id !== productId);
+            
+            const { error: profileError } = await supabase
+                .from('profiles')
+                .update({
+                    liked_products: updatedLikes
+                })
+                .eq('id', currentUser.id);
+            
+            if (profileError) throw profileError;
+            
+            likeBtn.classList.remove('liked');
+            likeBtn.innerHTML = `<span>🤍</span><span>${Math.max((product.likes || 1) - 1, 0)}</span>`;
+            currentUser.liked_products = updatedLikes;
+            product.likes = Math.max((product.likes || 1) - 1, 0);
+        } else {
+            // إضافة إعجاب
+            const { error: productError } = await supabase
+                .from('products')
+                .update({ 
+                    likes: (product.likes || 0) + 1 
+                })
+                .eq('id', productId);
+            
+            if (productError) throw productError;
+            
+            const newLikes = [...(currentUser.liked_products || []), productId];
+            
+            const { error: profileError } = await supabase
+                .from('profiles')
+                .update({
+                    liked_products: newLikes
+                })
+                .eq('id', currentUser.id);
+            
+            if (profileError) throw profileError;
+            
+            likeBtn.classList.add('liked');
+            likeBtn.innerHTML = `<span>❤️</span><span>${(product.likes || 0) + 1}</span>`;
+            currentUser.liked_products = newLikes;
+            product.likes = (product.likes || 0) + 1;
 
-                    // إرسال إشعار للمالك إذا كان الإعجاب من مستخدم آخر
-                    if (product.user_id !== currentUser.id) {
-                        const likerName = currentUser.full_name || "مستخدم";
-                        const message = `${likerName} أعجب بمنتجك "${product.name}"`;
-
-                        // إضافة إشعار للمالك
-                        await addNotificationForUser(
-                            product.user_id,
-                            "إعجاب جديد",
-                            message
-                        );
-                    }
-                }
-            } catch (error) {
-                console.error("خطأ في تحديث الإعجاب:", error);
-                showNotification("خطأ في تحديث الإعجاب: " + (error.message || "حدث خطأ غير متوقع"), "error");
-                
-                // إعادة تحميل حالة الإعجاب الحقيقية من السيرفر
-                await loadUserData(currentUser.id);
-                await loadProducts();
+            // إرسال إشعار للمالك إذا كان الإعجاب من مستخدم آخر
+            if (product.user_id !== currentUser.id) {
+                const likerName = currentUser.full_name || "مستخدم";
+                await addNotificationForUser(
+                    product.user_id,
+                    "إعجاب جديد",
+                    `${likerName} أعجب بمنتجك "${product.name}"`
+                );
             }
         }
+    } catch (error) {
+        console.error("خطأ في تحديث الإعجاب:", error);
+        showNotification("خطأ في تحديث الإعجاب", "error");
+    }
+}
        
         async function handlePublishProduct() {
             let imagePaths = []; // تعريف المتغير في أعلى الدالة
@@ -2871,34 +2846,33 @@
         
         // 6. دوال إدارة الإشعارات
         function renderNotifications() {
-            const panel = document.getElementById('notifications-panel');
-            panel.innerHTML = '';
+    const panel = document.getElementById('notifications-panel');
+    panel.innerHTML = '';
 
-            if (!currentUser?.notifications || currentUser.notifications.length === 0) {
-                panel.innerHTML = '<div class="notification-item"><p>لا توجد إشعارات جديدة</p></div>';
-                return;
-            }
+    if (!currentUser?.notifications || currentUser.notifications.length === 0) {
+        panel.innerHTML = '<div class="notification-item"><p>لا توجد إشعارات جديدة</p></div>';
+        return;
+    }
 
-            // ترتيب الإشعارات من الأحدث إلى الأقدم
-            const sortedNotifications = [...currentUser.notifications].sort((a, b) => {
-                return new Date(b.date) - new Date(a.date);
-            });
+    // ترتيب الإشعارات من الأحدث إلى الأقدم
+    const sortedNotifications = [...currentUser.notifications].sort((a, b) => {
+        return new Date(b.date) - new Date(a.date);
+    });
 
-            sortedNotifications.forEach(notif => {
-                const item = document.createElement('div');
-                item.className = 'notification-item';
-                if (!notif.read) {
-                    item.style.backgroundColor = 'rgba(26, 115, 232, 0.1)';
-                }
-                item.innerHTML = `
-                    <strong>${notif.title}</strong>
-                    <p>${notif.message}</p>
-                    <small>${formatTimeAgo(notif.date)}</small>
-                `;
-                panel.appendChild(item);
-            });
+    sortedNotifications.forEach(notif => {
+        const item = document.createElement('div');
+        item.className = 'notification-item';
+        if (!notif.read) {
+            item.style.backgroundColor = 'rgba(26, 115, 232, 0.1)';
         }
-
+        item.innerHTML = `
+            <strong>${notif.title}</strong>
+            <p>${notif.message}</p>
+            <small>${formatTimeAgo(notif.date)}</small>
+        `;
+        panel.appendChild(item);
+    });
+}
         async function markNotificationsAsRead() {
             if (!currentUser || !currentUser.notifications) return;
 
