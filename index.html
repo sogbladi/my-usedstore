@@ -2253,22 +2253,22 @@
             read: false
         };
 
-        // تحديد الإشعارات الحالية (إذا كانت موجودة) أو إنشاء مصفوفة جديدة
-        const currentNotifications = profile.notifications || [];
+        // تحديد الإشعارات الحالية أو إنشاء مصفوفة جديدة
+        const currentNotifications = Array.isArray(profile?.notifications) ? 
+            profile.notifications : [];
 
-        // تحديث الإشعارات في قاعدة البيانات
-        const { error: updateError } = await supabase
+        // استخدام upsert بدلاً من update لتجنب مشاكل السجلات غير الموجودة
+        const { error: upsertError } = await supabase
             .from('profiles')
-            .update({
+            .upsert({
+                id: userId,
                 notifications: [...currentNotifications, newNotification]
             })
-            .eq('id', userId)
-            .select()
-            .single();
+            .eq('id', userId);
 
-        if (updateError) throw updateError;
+        if (upsertError) throw upsertError;
 
-        // إذا كان المستخدم الحالي هو المستهدف، تحديث الواجهة
+        // تحديث الواجهة إذا كان المستخدم الحالي هو المستهدف
         if (currentUser && currentUser.id === userId) {
             currentUser.notifications = [...currentNotifications, newNotification];
             renderNotifications();
@@ -2280,7 +2280,6 @@
         showNotification("خطأ في إرسال الإشعار: " + error.message, "error");
     }
 }
-
         async function getUsernameById(userId) {
             try {
                 const { data, error } = await supabase
