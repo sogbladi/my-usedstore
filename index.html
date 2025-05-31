@@ -2428,13 +2428,17 @@
                     const fileName = `${currentUser.id}_${Date.now()}_${Math.floor(Math.random() * 10000)}.${ext}`;
                     const filePath = `product-images/${fileName}`;
 
-                    const { error: uploadError } = await supabase.storage
-                        .from('product-images')
-                        .upload(filePath, file, {
-                            cacheControl: '3600',
-                            contentType: file.type,
-                            upsert: false
-                        });
+     const { error: uploadError } = await supabase.storage
+        .from('product-images')
+        .upload(filePath, file, {
+            cacheControl: '3600',
+            contentType: file.type,
+            upsert: false,
+            // إضافة هذه الخيارات الجديدة
+            duplex: 'half',
+            retry: 3, // إعادة المحاولة 3 مرات عند الفشل
+            timeout: 30000 // مهلة 30 ثانية
+        });
 
                     if (uploadError) throw uploadError;
                     imagePaths.push(filePath);
@@ -2498,22 +2502,30 @@
         }
 
         async function getSignedProductImageUrls(imagePaths) {
-            const urls = [];
-
-            for (const path of imagePaths) {
-                const { data, error } = await supabase.storage
-                    .from('product-images')
-                    .createSignedUrl(path, 60 * 60); // صالح لمدة ساعة
-
-                if (!error && data) {
-                    urls.push(data.signedUrl);
-                } else {
-                    console.error('فشل في توليد رابط الصورة:', path, error);
-                }
-            }
-
-            return urls;
+    const urls = [];
+    
+    try {
+        // استخدم getPublicUrl بدلاً من createSignedUrl إذا كانت الصور عامة
+        for (const path of imagePaths) {
+            // تأكد من أن المسار يبدأ بـ 'product-images/' وليس مكرراً
+            const correctedPath = path.startsWith('product-images/') ? 
+                path : `product-images/${path}`;
+            
+            const { data: { publicUrl } } = await supabase
+                .storage
+                .from('product-images')
+                .getPublicUrl(correctedPath);
+            
+            urls.push(publicUrl);
         }
+    } catch (error) {
+        console.error('فشل في توليد رابط الصورة:', error);
+        // إرجاع رابط افتراضي للصور المعطوبة
+        return ['https://via.placeholder.com/400?text=صورة+غير+متوفرة'];
+    }
+    
+    return urls.length > 0 ? urls : ['https://via.placeholder.com/400?text=لا+توجد+صور'];
+}
 
         async function handleDeleteProduct() {
             if (!productToDelete || !currentUser) {
