@@ -1482,33 +1482,62 @@
 
         // 1. دوال تهيئة التطبيق
         async function initializeApp() {
-            setupEventListeners();
-            setupOTPInputs();
-            
-            // التحقق من حالة المصادقة عند التحميل
-            const { data: { session }, error } = await supabase.auth.getSession();
-            
-            if (error) {
-                console.error("خطأ في جلب حالة الجلسة:", error);
+    setupEventListeners();
+    setupOTPInputs();
+    
+    // 1. التحقق من حالة الجلسة الحالية
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError) {
+        console.error("خطأ في جلب حالة الجلسة:", sessionError);
+        showLoginPage();
+        return;
+    }
+    
+    // 2. إذا كان هناك جلسة نشطة
+    if (session?.user) {
+        await loadUserData(session.user.id);
+        await loadProducts();
+        showStorePage();
+        
+        subscribeToProductsChanges();
+        subscribeToProfileNotifications();
+    } else {
+        showLoginPage();
+    }
+    
+    // 3. إعداد مستمع لتغيرات حالة المصادقة (بما في ذلك INITIAL_SESSION)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        console.log("حدث تغيير في حالة المصادقة:", event);
+        
+        if (event === 'INITIAL_SESSION') {
+            if (!session) {
+                console.log("لا توجد جلسة نشطة - إظهار صفحة التسجيل");
                 showLoginPage();
-                return;
-            }
-            
-            if (session?.user) {
+            } else {
+                console.log("جلسة موجودة - تحميل البيانات");
                 await loadUserData(session.user.id);
                 await loadProducts();
                 showStorePage();
-                
-                // الاشتراك في تغيرات المنتجات والإشعارات
-                subscribeToProductsChanges();
-                subscribeToProfileNotifications();
-            } else {
-                showLoginPage();
             }
-            
-            // الاستماع لتغيرات حالة المصادقة
-            supabase.auth.onAuthStateChange(handleAuthStateChange);
         }
+        else if (event === 'SIGNED_IN') {
+            await loadUserData(session.user.id);
+            await loadProducts();
+            showStorePage();
+        }
+        else if (event === 'SIGNED_OUT') {
+            showLoginPage();
+        }
+    });
+    
+    // 4. إرجاع دالة للتنظيف (للاستخدام في useEffect إذا كنت تستخدم React)
+    return () => {
+        subscription?.unsubscribe();
+    };
+}
+            
+        
         
         function setupEventListeners() {
             // أحداث التنقل بين الصفحات
@@ -2236,48 +2265,30 @@
         // دالة إضافة إشعار للمستخدم
         async function addNotificationForUser(userId, title, message) {
     try {
-        // 1. جلب الإشعارات الحالية باستخدام maybeSingle() بدلاً من single()
-        const { data: profile, error: fetchError } = await supabase
-            .from('profiles')
-            .select('notifications')
-            .eq('id', userId)
-            .maybeSingle();
+        // 1. استخدم rpc لاستدعاء دالة مخصصة في Postgres
+        const { error } = await supabase.rpc('add_notification', {
+            user_id: userId,
+            notif_title: title,
+            notif_message: message
+        });
 
-        if (fetchError) throw fetchError;
+        if (error) throw error;
 
-        // 2. إنشاء الإشعار الجديد
-        const newNotification = {
-            title,
-            message,
-            date: new Date().toISOString(),
-            read: false
-        };
-
-        // 3. تحديد الإشعارات الحالية (إذا كانت موجودة) أو إنشاء مصفوفة جديدة
-        const currentNotifications = profile?.notifications || [];
-
-        // 4. تحديث الإشعارات في قاعدة البيانات
-        const { error: updateError } = await supabase
-            .from('profiles')
-            .update({
-                notifications: [...currentNotifications, newNotification]
-            })
-            .eq('id', userId);
-
-        if (updateError) throw updateError;
-
-        // 5. تحديث الواجهة إذا كان المستخدم الحالي هو المستهدف
-        if (currentUser && currentUser.id === userId) {
-            currentUser.notifications = [...currentNotifications, newNotification];
+        // 2. تحديث الواجهة
+        if (currentUser?.id === userId) {
+            currentUser.notifications = [
+                ...(currentUser.notifications || []),
+                { title, message, date: new Date().toISOString(), read: false }
+            ];
             renderNotifications();
             updateNotificationBadge();
         }
 
     } catch (error) {
         console.error("خطأ في إضافة الإشعار:", error);
-        showNotification("خطأ في إرسال الإشعار: " + error.message, "error");
     }
 }
+
         async function getUsernameById(userId) {
             try {
                 const { data, error } = await supabase
@@ -2722,23 +2733,22 @@
             profilePhone.textContent = currentUser.phone;
 
             // جلب Signed URL لصورة الملف الشخصي إن وجدت
-            if (currentUser.profile_pic && currentUser.profile_pic.trim() !== '') {
-                try {
-                    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-                        .from('profile-pictures')
-                        .createSignedUrl(currentUser.profile_pic, 60 * 60); // صالح لـ 60 دقيقة
+            if (currentUser.profile_pic) {
+        try {
+            // استخدم getPublicUrl بدلاً من createSignedUrl للصور العامة
+            const { data: { publicUrl } } = await supabase.storage
+                .from('profile-pictures')
+                .getPublicUrl(currentUser.profile_pic);
 
-                    if (signedUrlError) throw signedUrlError;
-
-                    updateProfilePicElements(signedUrlData.signedUrl);
-                } catch (err) {
-                    console.error('فشل في تحميل صورة الملف الشخصي:', err);
-                    updateProfilePicElements(null); // fallback إلى أول حرف
-                }
-            } else {
-                updateProfilePicElements(null);
-            }
+            updateProfilePicElements(publicUrl);
+        } catch (err) {
+            console.error('فشل في تحميل صورة الملف الشخصي:', err);
+            updateProfilePicElements(null);
         }
+    } else {
+        updateProfilePicElements(null);
+    }
+}
 
         function updateProfilePicElements(url) {
             const profilePic = document.getElementById('profile-picture');
