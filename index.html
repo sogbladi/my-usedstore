@@ -2344,6 +2344,24 @@
                         .eq('id', currentUser.id);
                     
                     if (profileError) throw profileError;
+
+                    if (product.user_id !== currentUser.id) {
+        const productOwner = await getProfileById(product.user_id);
+        
+        if (productOwner) { // التحقق من وجود المستخدم قبل إرسال الإشعار
+            const message = `❤️ ${currentUser.full_name} أعجب بمنتجك "${product.name}"`;
+            
+            const { error } = await supabase.from('notifications').insert({
+                user_id: product.user_id,
+                message: message,
+                related_product_id: product.id,
+                created_at: new Date().toISOString(),
+                read: false // تأكد من وجود هذا الحقل في جدولك
+            });
+            
+            if (error) throw error;
+        }
+    }
                     
                     likeBtn.classList.add('liked');
                     likeBtn.innerHTML = `<span>❤️</span><span>${(product.likes || 0) + 1}</span>`;
@@ -2380,7 +2398,7 @@
                     .from('profiles')
                     .select('*')
                     .eq('id', userId)
-                    .single();
+                    .maybeSingle(); // هذا سيحل مشكلة عدم وجود بيانات
                 
                 if (error) throw error;
                 return data;
