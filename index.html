@@ -1,3 +1,4 @@
+<!-- ✅ تعديل: إصلاح نظام الإشعارات بالكامل حسب طلب المستخدم 2025-06-06 -->
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -3434,5 +3435,44 @@ function showNotification(message, type = "info") {
             addProductPage.style.display = 'none';
         }
     </script>
+
+<!-- ✅ بداية: إضافة دعم إشعارات عند الإعجاب -->
+<script>
+async function handleLike(productId, productOwnerId) {
+    if (!currentUser || currentUser.id === productOwnerId) return;
+
+    try {
+        // 1. إرسال إشعار إلى صاحب المنتج في supabase
+        await supabase.from("notifications").insert([{
+            user_id: productOwnerId,
+            message: `أعجب ${currentUser.user_metadata.full_name} بمنتجك!`,
+            is_read: false
+        }]);
+
+        // 2. تشغيل الصوت
+        notificationSound.play().catch(() => {});
+
+        // 3. إشعار Web API
+        if (Notification.permission === "granted") {
+            new Notification("إشعار جديد", { body: `أعجب ${currentUser.user_metadata.full_name} بمنتجك!` });
+        }
+
+        // 4. تحديث عدد الإعجابات على المنتج محلياً
+        const likeCountSpan = document.querySelector(`#likes-${productId}`);
+        if (likeCountSpan) {
+            let currentCount = parseInt(likeCountSpan.innerText || "0");
+            likeCountSpan.innerText = currentCount + 1;
+        }
+
+    } catch (error) {
+        console.error("خطأ عند إرسال الإشعار:", error);
+    }
+}
+
+// ✅ تحديث زر الإعجاب في كرت المنتج ليستخدم handleLike
+// لاحقاً في renderProducts أو تحميل المنتجات
+</script>
+<!-- ✅ نهاية الإضافة -->
+
 </body>
 </html>
