@@ -57,7 +57,7 @@
 
         /* Header Styles */
         header {
-            background-color: var(--primary-color);
+            background-color: var(--notification-color);
             color: white;
             padding: 10px 0;
             box-shadow: var(--shadow);
@@ -246,7 +246,7 @@
         }
 
         .btn-primary {
-            background-color: var(--primary-color);
+            background-color: var(--notification-color);
             color: white;
         }
 
@@ -687,7 +687,7 @@
             position: fixed;
             top: 15px;
             right: 15px;
-            background-color: var(--primary-color);
+            background-color: var(--notification-color);
             color: white;
             padding: 12px;
             border-radius: 4px;
@@ -709,7 +709,7 @@
         }
 
         .notification.success {
-            background-color: var(--primary-color);
+            background-color: var(--notification-color);
         }
         
         .notification.info {
@@ -882,7 +882,7 @@
 
         .search-btn {
             padding: 8px 15px;
-            background-color: var(--primary-color);
+            background-color: var(--notification-color);
             color: white;
             border: none;
             border-radius: 4px;
@@ -1593,6 +1593,8 @@
         const confirmDeleteProductBtn = document.getElementById('confirm-delete-product');
         
         const notification = document.getElementById('notification');
+const notificationSound = new Audio('https://notificationsounds.com/notification-sounds/event-538/download/mp3');
+
         const notificationMessage = document.getElementById('notification-message');
         
         const productsContainer = document.getElementById('products-container');
@@ -3299,6 +3301,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         function renderNotifications() {
+  const limited = notifications.slice(-10).reverse();
             notificationsPanel.innerHTML = '';
             
             if (notifications.length === 0) {
@@ -3352,6 +3355,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // المشكلة: جميع الإشعارات لها نفس النمط
 // الحل: إضافة أنواع مختلفة
 function showNotification(message, type = "info") {
+    if (Notification.permission === "granted") {
+        new Notification("سوق بلادي", { body: message });
+    } else if (Notification.permission !== "denied") {
+        Notification.requestPermission().then(permission => {
+            if (permission === "granted") {
+                new Notification("سوق بلادي", { body: message });
+            }
+        });
+    }
     const icons = {
         success: '✅',
         error: '❌',
