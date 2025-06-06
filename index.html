@@ -970,11 +970,70 @@
                 height: 200px;
             }
         }
+
+        .store-header {
+  text-align: center;
+  margin-bottom: 30px;
+  animation: fadeIn 1s ease;
+}
+
+.store-logo {
+  font-family: 'Diwan', 'Traditional Arabic', 'Arial', sans-serif;
+  color: #1a73e8; /* اللون الأزرق */
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.store-slogan {
+  font-family: 'Tajawal', 'Arial', sans-serif;
+  color: var(--text-color);
+  font-size: 1.1rem;
+  margin-top: 0;
+}
+
+/* استيراد الخطوط من Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lateef:wght@400;600;700&display=swap');
+
+/* استخدام الخط الديوان (Lateef كبديل) */
+.store-logo {
+  font-family: 'Lateef', 'Traditional Arabic', 'Arial', sans-serif;
+  font-weight: 700;
+}
+
+/* تأثيرات إضافية */
+.store-logo {
+  position: relative;
+  display: inline-block;
+}
+
+.store-logo::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, #1a73e8, #34a853);
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 0.3s ease;
+}
+
+.store-header:hover .store-logo::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
     </style>
 </head>
 <body>
     <!-- Login Page -->
     <div id="login-page" class="container">
+        <div class="store-header">
+            <h1 class="store-logo">سوق بلادي</h1>
+            <p class="store-slogan">مع سوق بلادي تقدر تبيع وتشري كل شيء مستعمل</p>
+          </div>
         <div class="form-container">
             <h1 class="form-title">تسجيل الدخول</h1>
             <div class="form-group">
