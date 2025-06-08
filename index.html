@@ -2583,10 +2583,9 @@ if (product.user_id !== currentUser.id) {
             }
         }
         
-        async function handleLikeProduct
-
-// ✅ إرسال إشعار فقط إن لم يكن نفس المستخدم
-if (product.user_id !== currentUser.id) {
+        async function handleLikeProduct(product) {
+  // ✅ إرسال إشعار فقط إن لم يكن نفس المستخدم
+  if (product.user_id !== currentUser.id) {
     const message = `❤️ ${currentUser.user_metadata.full_name} أعجب بمنتجك "${product.name}"`;
     const { error } = await supabase.from("notifications").insert([{
         user_id: product.user_id,
@@ -2595,14 +2594,15 @@ if (product.user_id !== currentUser.id) {
         created_at: new Date().toISOString()
     }]);
     if (!error) {
+        const notificationSound = new Audio('https://notificationsounds.com/notification-sounds/event-538/download/mp3');
         notificationSound.play().catch(() => {});
         if (Notification.permission === "granted") {
-            new Notification("إشعار جديد", {
-                body: message
-            });
+            new Notification("إشعار جديد", { body: message });
         }
     }
+  }
 }
+
 
 // END PATCH(likeBtn) {
             const productId = likeBtn.dataset.productId;
@@ -2702,7 +2702,7 @@ if (product.user_id !== currentUser.id) {
                 await loadUserData(currentUser.id);
                 await loadProducts();
             }
-        }
+        
 
         async function getProfileById(userId) {
             try {
