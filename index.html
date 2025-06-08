@@ -2846,35 +2846,57 @@
         }
         
         // ============= دوال الإشعارات =============
+               let reconnectAttempts = 0;
+               const maxReconnectAttempts = 5;
+
         function setupRealtimeNotifications() {
-            if (!currentUser || notificationChannel) return;
-            
-            notificationChannel = supabase
-                .channel('notifications-channel')
-                .on(
-                    'postgres_changes',
-                    { 
-                        event: 'INSERT', 
-                        schema: 'public', 
-                        table: 'notifications',
-                        filter: `user_id=eq.${currentUser.id}`
-                    },
-                    handleNewNotification
-                )
-                .subscribe((status, err) => {
-                    if (status === 'SUBSCRIBED') {
-                        console.log('Connected to notifications channel');
-                    }
-                    if (status === 'CHANNEL_ERROR') {
-                        console.error('Channel error:', err);
-                        setTimeout(setupRealtimeNotifications, 5000);
-                    }
-                    if (status === 'TIMED_OUT') {
-                        console.log('Connection timed out, reconnecting...');
-                        setTimeout(setupRealtimeNotifications, 5000);
-                    }
-                });
-        }
+  if (!currentUser || notificationChannel) return;
+  
+  notificationChannel = supabase
+    .channel('notifications-channel')
+    .on(
+      'postgres_changes',
+      { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'notifications',
+        filter: `user_id=eq.${currentUser.id}`
+      },
+      handleNewNotification
+    )
+    .subscribe((status, err) => {
+      if (status === 'SUBSCRIBED') {
+        reconnectAttempts = 0;
+        console.log('Connected to notifications channel');
+      }
+      if (status === 'CHANNEL_ERROR') {
+        console.error('Channel error:', err);
+        reconnect();
+      }
+      if (status === 'TIMED_OUT') {
+        console.log('Connection timed out, reconnecting...');
+        reconnect();
+      }
+    });
+}
+
+        function reconnect() {
+  if (reconnectAttempts >= maxReconnectAttempts) {
+    console.error('Max reconnection attempts reached');
+    return;
+  }
+  
+  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+  reconnectAttempts++;
+  
+  setTimeout(() => {
+    if (notificationChannel) {
+      supabase.removeChannel(notificationChannel);
+      notificationChannel = null;
+    }
+    setupRealtimeNotifications();
+  }, delay);
+}
         
         async function handleNewNotification(payload) {
             try {
