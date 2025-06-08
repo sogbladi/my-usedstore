@@ -1543,7 +1543,37 @@
 
         window.supabase = supabase; //
         
-        // تعريف المتغيرات العامة
+        
+// ✅ حفظ الجلسة وعدم الخروج بعد التحديث
+document.addEventListener('DOMContentLoaded', async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session && session.user) {
+        currentUser = session.user;
+        localStorage.setItem("stayLoggedIn", "true");
+        await loadUserData(session.user.id);
+        await loadProducts();
+        await loadNotifications();
+        showStorePage();
+    } else {
+        if (localStorage.getItem("stayLoggedIn") === "true") {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session && session.user) {
+                currentUser = session.user;
+                await loadUserData(session.user.id);
+                await loadProducts();
+                await loadNotifications();
+                showStorePage();
+            } else {
+                showLoginPage();
+            }
+        } else {
+            showLoginPage();
+        }
+    }
+});
+
+
+// تعريف المتغيرات العامة
         let currentUser = null;
         let products = [];
         let notifications = [];
@@ -2496,7 +2526,28 @@ const notificationSound = new Audio('https://notificationsounds.com/notification
                 const likeBtn = productCard.querySelector('.like-btn');
                 likeBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    await handleLikeProduct(e.target.closest('.like-btn'));
+                    await handleLikeProduct
+
+// ✅ إرسال إشعار فقط إن لم يكن نفس المستخدم
+if (product.user_id !== currentUser.id) {
+    const message = `❤️ ${currentUser.user_metadata.full_name} أعجب بمنتجك "${product.name}"`;
+    const { error } = await supabase.from("notifications").insert([{
+        user_id: product.user_id,
+        message: message,
+        is_read: false,
+        created_at: new Date().toISOString()
+    }]);
+    if (!error) {
+        notificationSound.play().catch(() => {});
+        if (Notification.permission === "granted") {
+            new Notification("إشعار جديد", {
+                body: message
+            });
+        }
+    }
+}
+
+// END PATCH(e.target.closest('.like-btn'));
                 });
                 
                 // حذف المنتج
@@ -2532,7 +2583,28 @@ const notificationSound = new Audio('https://notificationsounds.com/notification
             }
         }
         
-        async function handleLikeProduct(likeBtn) {
+        async function handleLikeProduct
+
+// ✅ إرسال إشعار فقط إن لم يكن نفس المستخدم
+if (product.user_id !== currentUser.id) {
+    const message = `❤️ ${currentUser.user_metadata.full_name} أعجب بمنتجك "${product.name}"`;
+    const { error } = await supabase.from("notifications").insert([{
+        user_id: product.user_id,
+        message: message,
+        is_read: false,
+        created_at: new Date().toISOString()
+    }]);
+    if (!error) {
+        notificationSound.play().catch(() => {});
+        if (Notification.permission === "granted") {
+            new Notification("إشعار جديد", {
+                body: message
+            });
+        }
+    }
+}
+
+// END PATCH(likeBtn) {
             const productId = likeBtn.dataset.productId;
             const product = products.find(p => p.id === productId);
             
