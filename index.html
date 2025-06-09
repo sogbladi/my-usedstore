@@ -5,9 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>متجر بيع الأشياء المستعملة</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="./manifest.json">
+    <script>
+         if ('serviceWorker' in navigator) {
+           navigator.serviceWorker.register('./sw.js');
+              }
+    </script>
+
     <meta name="theme-color" content="#2e7d32">
     <meta name="description" content="سوق بلادي - بيع وشراء الأشياء المستعملة في الجزائر">
+
+    
+      
 
     <style>
         :root {
@@ -1410,6 +1419,8 @@
             <div class="image-viewer-thumbnails" id="image-thumbnails"></div>
         </div>
     </div>
+    
+
 
     <!-- Notification -->
     <div class="notification" id="notification" role="alert" aria-live="assertive">
@@ -1715,26 +1726,29 @@
         }
         
         async function handleFacebookLogin() {
-            try {
-                toggleButtonLoading(facebookLoginBtn, true);
-                
-                const { data, error } = await supabase.auth.signInWithOAuth({
-                    provider: 'facebook',
-                    options: {
-                        redirectTo: window.location.origin,
-                        scopes: 'email',
-                    }
-                });
-                
-                if (error) throw error;
-                
-            } catch (error) {
-                console.error("خطأ في تسجيل الدخول عبر فيسبوك:", error);
-                showNotification("خطأ في تسجيل الدخول عبر فيسبوك: " + error.message, "error");
-            } finally {
-                toggleButtonLoading(facebookLoginBtn, false);
+    try {
+        toggleButtonLoading(facebookLoginBtn, true);
+        
+        const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: 'facebook',
+            options: {
+                redirectTo: window.location.origin,
+                scopes: 'email,public_profile',
+                queryParams: {
+                    display: 'popup' // لجعل النافذة منبثقة بدلاً من إعادة التوجيه
+                }
             }
-        }
+        });
+        
+        if (error) throw error;
+        
+    } catch (error) {
+        console.error("خطأ في تسجيل الدخول عبر فيسبوك:", error);
+        showNotification("خطأ في تسجيل الدخول عبر فيسبوك: " + (error.message || "تأكد من السماح بالإذن"), "error");
+    } finally {
+        toggleButtonLoading(facebookLoginBtn, false);
+    }
+}
         
         async function handleRegister() {
             const fullName = document.getElementById('full-name').value.trim();
@@ -1906,6 +1920,21 @@
         }
         
         // ============= دوال إدارة المستخدم =============
+
+        function setupServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js')
+            .then(registration => {
+                console.log('ServiceWorker registration successful');
+            })
+            .catch(err => {
+                console.log('ServiceWorker registration failed: ', err);
+                // يمكنك إضافة رسالة للمستخدم هنا إذا لزم الأمر
+            });
+    }
+}
+
+
         async function loadUserData(userId) {
             try {
                 const { data: userData, error } = await supabase
@@ -2289,24 +2318,26 @@
         }
         
         async function getSignedProductImageUrls(imagePaths) {
-            if (!imagePaths?.length) return [];
+    if (!imagePaths?.length) return [];
+    
+    const urls = [];
+    for (const path of imagePaths) {
+        try {
+            // إضافة cache busting لمنع المشاكل
+            const cacheBuster = Date.now();
+            const { data, error } = await supabase.storage
+                .from('product-images')
+                .createSignedUrl(path, 3600);
             
-            const urls = [];
-            for (const path of imagePaths) {
-                try {
-                    const { data, error } = await supabase.storage
-                        .from('product-images')
-                        .createSignedUrl(path, 3600);
-                    
-                    if (!error && data?.signedUrl) {
-                        urls.push(data.signedUrl);
-                    }
-                } catch (error) {
-                    console.error('فشل في توليد رابط الصورة:', path, error);
-                }
+            if (!error && data?.signedUrl) {
+                urls.push(`${data.signedUrl}?cache=${cacheBuster}`);
             }
-            return urls;
+        } catch (error) {
+            console.error('فشل في توليد رابط الصورة:', path, error);
         }
+    }
+    return urls;
+}
         
         function renderProducts() {
             const container = document.getElementById('products-container');
@@ -2850,34 +2881,29 @@
                const maxReconnectAttempts = 5;
 
         function setupRealtimeNotifications() {
-  if (!currentUser || notificationChannel) return;
-  
-  notificationChannel = supabase
-    .channel('notifications-channel')
-    .on(
-      'postgres_changes',
-      { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'notifications',
-        filter: `user_id=eq.${currentUser.id}`
-      },
-      handleNewNotification
-    )
-    .subscribe((status, err) => {
-      if (status === 'SUBSCRIBED') {
-        reconnectAttempts = 0;
-        console.log('Connected to notifications channel');
-      }
-      if (status === 'CHANNEL_ERROR') {
-        console.error('Channel error:', err);
-        reconnect();
-      }
-      if (status === 'TIMED_OUT') {
-        console.log('Connection timed out, reconnecting...');
-        reconnect();
-      }
-    });
+            if (!currentUser || notificationChannel) return;
+    
+              notificationChannel = supabase
+                   .channel('notifications-channel')
+                   .on(
+                   'postgres_changes',
+                        { 
+                event: 'INSERT', 
+                schema: 'public', 
+                table: 'notifications',
+                filter: `user_id=eq.${currentUser.id}`
+            },
+            handleNewNotification
+        )
+        .subscribe((status, err) => {
+            if (status === 'SUBSCRIBED') {
+                console.log('Connected to notifications channel');
+            }
+            if (status === 'CHANNEL_ERROR') {
+                console.error('Channel error:', err);
+                setTimeout(setupRealtimeNotifications, 5000);
+            }
+        });
 }
 
         function reconnect() {
@@ -3083,30 +3109,46 @@
         
         // ============= دوال عرض الصور =============
         function openImageViewer(images) {
-            currentViewingImages = images;
-            currentImageIndex = 0;
-            
-            viewerMainImage.src = images[0];
-            viewerMainImage.alt = 'صورة المنتج';
-            
-            imageThumbnails.innerHTML = '';
-            images.forEach((img, index) => {
-                const thumb = document.createElement('img');
-                thumb.src = img;
-                thumb.classList.add('image-viewer-thumbnail');
-                thumb.alt = `صورة مصغرة ${index + 1}`;
-                if (index === 0) thumb.classList.add('active');
-                
-                thumb.addEventListener('click', () => {
-                    currentImageIndex = index;
-                    updateImageViewer();
-                });
-                
-                imageThumbnails.appendChild(thumb);
-            });
-            
-            showModal(imageViewerModal);
-        }
+    // تعريف العناصر التي تستخدم في عرض الصور
+    const viewerMainImage = document.getElementById('viewer-main-image');
+    const imageThumbnails = document.getElementById('image-thumbnails');
+    const imageViewerModal = document.getElementById('image-viewer-modal');
+
+    // التحقق من وجود العناصر
+    if (!viewerMainImage || !imageThumbnails || !imageViewerModal) {
+        console.error('بعض عناصر عرض الصورة غير موجودة في الصفحة.');
+        return;
+    }
+
+    // تخزين الصور الحالية
+    currentViewingImages = images;
+    currentImageIndex = 0;
+
+    // عرض أول صورة
+    viewerMainImage.src = images[0];
+    viewerMainImage.alt = 'صورة المنتج';
+
+    // توليد الصور المصغرة
+    imageThumbnails.innerHTML = '';
+    images.forEach((img, index) => {
+        const thumb = document.createElement('img');
+        thumb.src = img;
+        thumb.classList.add('image-viewer-thumbnail');
+        thumb.alt = `صورة مصغرة ${index + 1}`;
+        if (index === 0) thumb.classList.add('active');
+
+        thumb.addEventListener('click', () => {
+            currentImageIndex = index;
+            updateImageViewer();
+        });
+
+        imageThumbnails.appendChild(thumb);
+    });
+
+    // عرض النافذة
+    showModal(imageViewerModal);
+}
+
         
         function updateImageViewer() {
             if (currentViewingImages.length > 0) {
